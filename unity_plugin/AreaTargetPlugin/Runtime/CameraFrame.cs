@@ -1,0 +1,22 @@
+using UnityEngine;
+
+namespace AreaTargetPlugin
+{
+    /// <summary>
+    /// Represents a camera frame with image data and intrinsics for tracking.
+    /// </summary>
+    public struct CameraFrame
+    {
+        /// <summary>Grayscale image data (row-major, single channel).</summary>
+        public byte[] ImageData;
+
+        /// <summary>Image width in pixels.</summary>
+        public int Width;
+
+        /// <summary>Image height in pixels.</summary>
+        public int Height;
+
+        /// <summary>Camera intrinsic matrix (3x3).</summary>
+        public Matrix4x4 Intrinsics;
+    }
+}

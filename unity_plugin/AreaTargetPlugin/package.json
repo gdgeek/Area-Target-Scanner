@@ -1,0 +1,35 @@
+{
+  "name": "com.areatarget.tracking",
+  "version": "1.0.0",
+  "displayName": "Area Target Tracking Plugin",
+  "description": "Open-source area target scanning and AR tracking plugin for Unity. Loads area target asset bundles and provides 6DoF visual localization using ORB feature matching and PnP pose estimation.",
+  "unity": "2021.3",
+  "dependencies": {
+    "com.unity.xr.arfoundation": "5.0.0",
+    "com.unity.xr.arsubsystems": "5.0.0"
+  },
+  "keywords": [
+    "ar",
+    "area-target",
+    "tracking",
+    "visual-localization",
+    "opencv"
+  ],
+  "author": {
+    "name": "Area Target Scanner",
+    "url": "https://github.com/area-target-scanner"
+  },
+  "license": "MIT",
+  "samples": [
+    {
+      "displayName": "Area Target Example",
+      "description": "完整示例：AR 真机跟踪 + 编辑器内生命周期演示",
+      "path": "Samples~/AreaTargetExample"
+    }
+  ],
+  "relatedPackages": {},
+  "externalDependencies": {
+    "OpenCVForUnity": "2.5.0",
+    "SQLite-net": "1.8.0"
+  }
+}
