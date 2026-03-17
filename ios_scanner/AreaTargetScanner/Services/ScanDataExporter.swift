@@ -1,4 +1,5 @@
 import Foundation
+import ARKit
 
 /// Helper class responsible for writing scan data to disk in standard formats.
 ///
@@ -7,6 +8,7 @@ import Foundation
 /// - poses.json (camera poses with column-major 4x4 transforms)
 /// - intrinsics.json (camera intrinsic parameters)
 /// - JPEG images in images/ subdirectory
+/// - GLB 3D model (mesh from LiDAR)
 ///
 /// - Requirements: 3.1, 3.2, 3.3, 3.4
 final class ScanDataExporter {
@@ -43,6 +45,11 @@ final class ScanDataExporter {
     /// ├── pointcloud.ply
     /// ├── poses.json
     /// ├── intrinsics.json
+    /// ├── model.obj          (textured if mapping succeeds, untextured otherwise)
+    /// ├── model.mtl          (only when textured)
+    /// ├── texture.jpg        (only when textured)
+    /// ├── model.usdz         (only when textured + system supports ModelIO)
+    /// ├── model.usda         (untextured fallback)
     /// └── images/
     ///     ├── frame_0000.jpg
     ///     └── ...
@@ -60,6 +67,7 @@ final class ScanDataExporter {
         poses: [CameraPose],
         intrinsics: CameraIntrinsics,
         images: [CapturedImage],
+        meshAnchors: [ARMeshAnchor] = [],
         outputPath: String
     ) throws {
         let fileManager = FileManager.default
@@ -73,6 +81,30 @@ final class ScanDataExporter {
         try writePosesJSON(poses: poses, to: outputURL.appendingPathComponent("poses.json"))
         try writeIntrinsicsJSON(intrinsics: intrinsics, to: outputURL.appendingPathComponent("intrinsics.json"))
         try writeImages(images: images, to: outputURL.appendingPathComponent("images"))
+
+        // Export 3D mesh model (OBJ + USDA) if mesh data is available
+        if !meshAnchors.isEmpty {
+            try? MeshExporter.export(meshAnchors: meshAnchors, to: outputPath)
+        }
+
+        // Textured mesh export: runs after untextured export so textured OBJ overwrites untextured one on success
+        if !meshAnchors.isEmpty && !images.isEmpty {
+            do {
+                let pipeline = TextureMappingPipeline()
+                let texturedMesh = try pipeline.generateTexturedMesh(
+                    meshAnchors: meshAnchors,
+                    cameraPoses: poses,
+                    images: images,
+                    intrinsics: intrinsics,
+                    atlasSize: 4096
+                )
+                try TexturedMeshExporter.exportOBJ(mesh: texturedMesh, to: outputPath)
+                try? TexturedMeshExporter.exportUSDZ(mesh: texturedMesh, to: outputPath)
+            } catch {
+                // Texture mapping failed — fall back to untextured mesh export (already done above)
+                print("[ScanDataExporter] Texture mapping failed: \(error.localizedDescription). Using untextured mesh.")
+            }
+        }
     }
 
     // MARK: - PLY Export

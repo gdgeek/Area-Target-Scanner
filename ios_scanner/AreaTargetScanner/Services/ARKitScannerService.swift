@@ -29,7 +29,8 @@ final class ARKitScannerService: NSObject, ScannerService {
 
     // MARK: - State
 
-    private let arSession = ARSession()
+    /// Exposed for the AR camera preview view to share the same session.
+    let arSession = ARSession()
     private var isScanning = false
 
     /// Accumulated point cloud vertices: each element is [x, y, z, r, g, b, nx, ny, nz]
@@ -49,6 +50,8 @@ final class ARKitScannerService: NSObject, ScannerService {
     private var sessionStartTime: TimeInterval = 0
     /// Running keyframe index for filename generation
     private var keyframeIndex: Int = 0
+    /// Collected mesh anchors for GLB export
+    private(set) var meshAnchors: [ARMeshAnchor] = []
 
     // MARK: - ScannerService Protocol
 
@@ -68,6 +71,7 @@ final class ARKitScannerService: NSObject, ScannerService {
         lastKeyframeTime = 0
         lastKeyframeTransform = nil
         keyframeIndex = 0
+        meshAnchors = []
 
         // Configure ARKit session for LiDAR point cloud + RGB capture
         let configuration = ARWorldTrackingConfiguration()
@@ -123,6 +127,7 @@ final class ARKitScannerService: NSObject, ScannerService {
                 poses: cameraPoses,
                 intrinsics: intrinsics,
                 images: capturedImages,
+                meshAnchors: meshAnchors,
                 outputPath: outputPath
             )
         } catch {
@@ -292,6 +297,29 @@ final class ARKitScannerService: NSObject, ScannerService {
 extension ARKitScannerService: ARSessionDelegate {
 
     /// Called for each new ARFrame. Handles point cloud accumulation and keyframe capture.
+    func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
+        guard isScanning else { return }
+        for anchor in anchors {
+            if let meshAnchor = anchor as? ARMeshAnchor {
+                meshAnchors.append(meshAnchor)
+            }
+        }
+    }
+
+    func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
+        guard isScanning else { return }
+        for anchor in anchors {
+            if let meshAnchor = anchor as? ARMeshAnchor {
+                // Replace existing anchor with updated version
+                if let idx = meshAnchors.firstIndex(where: { $0.identifier == meshAnchor.identifier }) {
+                    meshAnchors[idx] = meshAnchor
+                } else {
+                    meshAnchors.append(meshAnchor)
+                }
+            }
+        }
+    }
+
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         guard isScanning else { return }
 

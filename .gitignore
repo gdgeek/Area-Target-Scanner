@@ -7,3 +7,10 @@ __pycache__/
 venv/
 .DS_Store
 .kiro/
+data/
+
+# Xcode
+ios_scanner/build/
+*.xcuserdata
+xcuserdata/
+DerivedData/

@@ -1,0 +1,604 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10001 /* AreaTargetScannerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10001 /* AreaTargetScannerApp.swift */; };
+		A10002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10002 /* ContentView.swift */; };
+		A10003 /* CameraIntrinsics.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10003 /* CameraIntrinsics.swift */; };
+		A10004 /* CameraPose.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10004 /* CameraPose.swift */; };
+		A10005 /* ScanProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10005 /* ScanProgress.swift */; };
+		A10006 /* ScanResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10006 /* ScanResult.swift */; };
+		A10007 /* ARKitScannerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10007 /* ARKitScannerService.swift */; };
+		A10008 /* ScanDataExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10008 /* ScanDataExporter.swift */; };
+		A10009 /* ScannerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10009 /* ScannerService.swift */; };
+		A10010 /* PointCloudPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010 /* PointCloudPreviewView.swift */; };
+		A10011 /* ScanProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10011 /* ScanProgressView.swift */; };
+		A10012 /* ScanDataExporterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10012 /* ScanDataExporterTests.swift */; };
+		A10013 /* ScanViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10014 /* ScanViewModel.swift */; };
+		A10014 /* ARScanningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10015 /* ARScanningView.swift */; };
+A10017 /* GLBExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10017 /* GLBExporter.swift */; };
+		A10018 /* TextureMappingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10018 /* TextureMappingModels.swift */; };
+		A10019 /* TextureMappingPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10019 /* TextureMappingPipeline.swift */; };
+		A10020 /* UVUnwrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10020 /* UVUnwrapper.swift */; };
+		A10021 /* TextureProjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10021 /* TextureProjector.swift */; };
+		A10022 /* TextureAtlasRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10022 /* TextureAtlasRenderer.swift */; };
+		A10023 /* TexturedMeshExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10023 /* TexturedMeshExporter.swift */; };
+		A10024 /* TextureMappingPropertyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10024 /* TextureMappingPropertyTests.swift */; };
+		A10030 /* xatlas.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B10030 /* xatlas.cpp */; };
+		A10031 /* XAtlasBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = B10031 /* XAtlasBridge.mm */; };
+		A10040 /* ModelPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10040 /* ModelPreviewView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C10001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D10001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E10001;
+			remoteInfo = AreaTargetScanner;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		B10001 /* AreaTargetScannerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AreaTargetScannerApp.swift; sourceTree = "<group>"; };
+		B10002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		B10003 /* CameraIntrinsics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraIntrinsics.swift; sourceTree = "<group>"; };
+		B10004 /* CameraPose.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPose.swift; sourceTree = "<group>"; };
+		B10005 /* ScanProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanProgress.swift; sourceTree = "<group>"; };
+		B10006 /* ScanResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanResult.swift; sourceTree = "<group>"; };
+		B10007 /* ARKitScannerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ARKitScannerService.swift; sourceTree = "<group>"; };
+		B10008 /* ScanDataExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanDataExporter.swift; sourceTree = "<group>"; };
+		B10009 /* ScannerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerService.swift; sourceTree = "<group>"; };
+		B10010 /* PointCloudPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PointCloudPreviewView.swift; sourceTree = "<group>"; };
+		B10011 /* ScanProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanProgressView.swift; sourceTree = "<group>"; };
+		B10012 /* ScanDataExporterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanDataExporterTests.swift; sourceTree = "<group>"; };
+		B10013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B10014 /* ScanViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanViewModel.swift; sourceTree = "<group>"; };
+		B10015 /* ARScanningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ARScanningView.swift; sourceTree = "<group>"; };
+B10017 /* GLBExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GLBExporter.swift; sourceTree = "<group>"; };
+		B10018 /* TextureMappingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextureMappingModels.swift; sourceTree = "<group>"; };
+		B10019 /* TextureMappingPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextureMappingPipeline.swift; sourceTree = "<group>"; };
+		B10020 /* UVUnwrapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UVUnwrapper.swift; sourceTree = "<group>"; };
+		B10021 /* TextureProjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextureProjector.swift; sourceTree = "<group>"; };
+		B10022 /* TextureAtlasRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextureAtlasRenderer.swift; sourceTree = "<group>"; };
+		B10023 /* TexturedMeshExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TexturedMeshExporter.swift; sourceTree = "<group>"; };
+		B10024 /* TextureMappingPropertyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextureMappingPropertyTests.swift; sourceTree = "<group>"; };
+		B10025 /* xatlas.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = xatlas.h; sourceTree = "<group>"; };
+		B10030 /* xatlas.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = xatlas.cpp; sourceTree = "<group>"; };
+		B10031 /* XAtlasBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = XAtlasBridge.mm; sourceTree = "<group>"; };
+		B10032 /* XAtlasBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = XAtlasBridge.h; sourceTree = "<group>"; };
+		B10033 /* AreaTargetScanner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "AreaTargetScanner-Bridging-Header.h"; sourceTree = "<group>"; };
+		B10040 /* ModelPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPreviewView.swift; sourceTree = "<group>"; };
+		F10001 /* AreaTargetScanner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AreaTargetScanner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F10002 /* AreaTargetScannerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AreaTargetScannerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		G10001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		G10002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		H10001 = {
+			isa = PBXGroup;
+			children = (
+				H10002 /* AreaTargetScanner */,
+				H10006 /* AreaTargetScannerTests */,
+				H10007 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		H10002 /* AreaTargetScanner */ = {
+			isa = PBXGroup;
+			children = (
+				B10001 /* AreaTargetScannerApp.swift */,
+				B10002 /* ContentView.swift */,
+				B10014 /* ScanViewModel.swift */,
+				B10013 /* Info.plist */,
+				B10033 /* AreaTargetScanner-Bridging-Header.h */,
+				H10003 /* Models */,
+				H10004 /* Services */,
+				H10005 /* Views */,
+				H10008 /* ThirdParty */,
+			);
+			path = AreaTargetScanner;
+			sourceTree = "<group>";
+		};
+		H10003 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				B10003 /* CameraIntrinsics.swift */,
+				B10004 /* CameraPose.swift */,
+				B10005 /* ScanProgress.swift */,
+				B10006 /* ScanResult.swift */,
+				B10018 /* TextureMappingModels.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		H10004 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				B10007 /* ARKitScannerService.swift */,
+				B10008 /* ScanDataExporter.swift */,
+				B10009 /* ScannerService.swift */,
+				B10017 /* GLBExporter.swift */,
+				B10019 /* TextureMappingPipeline.swift */,
+				B10020 /* UVUnwrapper.swift */,
+				B10021 /* TextureProjector.swift */,
+				B10022 /* TextureAtlasRenderer.swift */,
+				B10023 /* TexturedMeshExporter.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		H10005 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				B10010 /* PointCloudPreviewView.swift */,
+				B10011 /* ScanProgressView.swift */,
+				B10015 /* ARScanningView.swift */,
+				B10040 /* ModelPreviewView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		H10006 /* AreaTargetScannerTests */ = {
+			isa = PBXGroup;
+			children = (
+				B10012 /* ScanDataExporterTests.swift */,
+				B10024 /* TextureMappingPropertyTests.swift */,
+			);
+			path = AreaTargetScannerTests;
+			sourceTree = "<group>";
+		};
+		H10007 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F10001 /* AreaTargetScanner.app */,
+				F10002 /* AreaTargetScannerTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		H10008 /* ThirdParty */ = {
+			isa = PBXGroup;
+			children = (
+				H10009 /* xatlas */,
+			);
+			path = ThirdParty;
+			sourceTree = "<group>";
+		};
+		H10009 /* xatlas */ = {
+			isa = PBXGroup;
+			children = (
+				B10025 /* xatlas.h */,
+				B10030 /* xatlas.cpp */,
+				B10032 /* XAtlasBridge.h */,
+				B10031 /* XAtlasBridge.mm */,
+			);
+			path = xatlas;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		E10001 /* AreaTargetScanner */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = J10003 /* Build configuration list for PBXNativeTarget "AreaTargetScanner" */;
+			buildPhases = (
+				I10001 /* Sources */,
+				G10001 /* Frameworks */,
+				K10001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AreaTargetScanner;
+			productName = AreaTargetScanner;
+			productReference = F10001 /* AreaTargetScanner.app */;
+			productType = "com.apple.product-type.application";
+		};
+		E10002 /* AreaTargetScannerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = J10006 /* Build configuration list for PBXNativeTarget "AreaTargetScannerTests" */;
+			buildPhases = (
+				I10002 /* Sources */,
+				G10002 /* Frameworks */,
+				K10002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				L10001 /* PBXTargetDependency */,
+			);
+			name = AreaTargetScannerTests;
+			productName = AreaTargetScannerTests;
+			productReference = F10002 /* AreaTargetScannerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D10001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1540;
+				LastUpgradeCheck = 1540;
+				TargetAttributes = {
+					E10001 = {
+						CreatedOnToolsVersion = 15.4;
+					};
+					E10002 = {
+						CreatedOnToolsVersion = 15.4;
+						TestTargetID = E10001;
+					};
+				};
+			};
+			buildConfigurationList = J10001 /* Build configuration list for PBXProject "AreaTargetScanner" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = H10001;
+			productRefGroup = H10007 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				E10001 /* AreaTargetScanner */,
+				E10002 /* AreaTargetScannerTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		K10001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		K10002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		I10001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10001 /* AreaTargetScannerApp.swift in Sources */,
+				A10002 /* ContentView.swift in Sources */,
+				A10003 /* CameraIntrinsics.swift in Sources */,
+				A10004 /* CameraPose.swift in Sources */,
+				A10005 /* ScanProgress.swift in Sources */,
+				A10006 /* ScanResult.swift in Sources */,
+				A10007 /* ARKitScannerService.swift in Sources */,
+				A10008 /* ScanDataExporter.swift in Sources */,
+				A10009 /* ScannerService.swift in Sources */,
+				A10010 /* PointCloudPreviewView.swift in Sources */,
+				A10011 /* ScanProgressView.swift in Sources */,
+				A10013 /* ScanViewModel.swift in Sources */,
+				A10014 /* ARScanningView.swift in Sources */,
+				A10017 /* GLBExporter.swift in Sources */,
+				A10018 /* TextureMappingModels.swift in Sources */,
+				A10019 /* TextureMappingPipeline.swift in Sources */,
+				A10020 /* UVUnwrapper.swift in Sources */,
+				A10021 /* TextureProjector.swift in Sources */,
+				A10022 /* TextureAtlasRenderer.swift in Sources */,
+				A10023 /* TexturedMeshExporter.swift in Sources */,
+				A10030 /* xatlas.cpp in Sources */,
+				A10031 /* XAtlasBridge.mm in Sources */,
+				A10040 /* ModelPreviewView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		I10002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10012 /* ScanDataExporterTests.swift in Sources */,
+				A10024 /* TextureMappingPropertyTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		L10001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E10001 /* AreaTargetScanner */;
+			targetProxy = C10001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		J10002 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		J10004 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PK435YWZ25;
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/AreaTargetScanner/ThirdParty/xatlas",
+				);
+				INFOPLIST_FILE = AreaTargetScanner/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Area Target Scanner";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.areatarget.scanner;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "AreaTargetScanner/AreaTargetScanner-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		J10005 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PK435YWZ25;
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/AreaTargetScanner/ThirdParty/xatlas",
+				);
+				INFOPLIST_FILE = AreaTargetScanner/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Area Target Scanner";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.areatarget.scanner;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "AreaTargetScanner/AreaTargetScanner-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		J10007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PK435YWZ25;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.areatarget.scanner.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AreaTargetScanner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AreaTargetScanner";
+			};
+			name = Debug;
+		};
+		J10008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PK435YWZ25;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.areatarget.scanner.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AreaTargetScanner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AreaTargetScanner";
+			};
+			name = Release;
+		};
+		J10009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		J10001 /* Build configuration list for PBXProject "AreaTargetScanner" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				J10002 /* Debug */,
+				J10009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		J10003 /* Build configuration list for PBXNativeTarget "AreaTargetScanner" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				J10004 /* Debug */,
+				J10005 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		J10006 /* Build configuration list for PBXNativeTarget "AreaTargetScannerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				J10007 /* Debug */,
+				J10008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = D10001 /* Project object */;
+}
