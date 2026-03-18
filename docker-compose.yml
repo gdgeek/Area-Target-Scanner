@@ -1,0 +1,28 @@
+services:
+  web_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:5000"
+    volumes:
+      - pipeline_uploads:/tmp/pipeline_uploads
+      - pipeline_outputs:/tmp/pipeline_outputs
+    environment:
+      - UPLOAD_DIR=/tmp/pipeline_uploads
+      - OUTPUT_DIR=/tmp/pipeline_outputs
+      - MODEL_OPTIMIZER_URL=http://model_optimizer:3000
+    depends_on:
+      - model_optimizer
+    restart: unless-stopped
+
+  model_optimizer:
+    image: gdgeek/3d-model-optimizer:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+
+volumes:
+  pipeline_uploads:
+  pipeline_outputs:

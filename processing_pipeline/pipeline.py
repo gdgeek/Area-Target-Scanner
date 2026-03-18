@@ -203,6 +203,7 @@ class ReconstructionPipeline:
         self,
         mesh: o3d.geometry.TriangleMesh,
         images: List[dict],
+        intrinsics: dict | None = None,
     ) -> TexturedMesh:
         """Project images onto the mesh surface to generate a texture atlas.
 
@@ -214,6 +215,8 @@ class ReconstructionPipeline:
             mesh: Simplified triangle mesh.
             images: List of dicts each containing ``"path"`` (image file path)
                 and ``"pose"`` (4x4 camera-to-world matrix).
+            intrinsics: Optional camera intrinsics dict with keys
+                ``fx``, ``fy``, ``cx``, ``cy``, ``width``, ``height``.
 
         Returns:
             Textured mesh with associated texture and material files.
@@ -256,7 +259,7 @@ class ReconstructionPipeline:
             # ---- Fallback: vertex-colour projection ----
             logger.info("Using fallback vertex-colour texture projection.")
             self._fallback_texture_projection(
-                mesh, images, texture_file, material_file, logger
+                mesh, images, texture_file, material_file, logger, intrinsics
             )
 
         # ---- Global colour correction ----
@@ -368,6 +371,7 @@ class ReconstructionPipeline:
         texture_file: str,
         material_file: str,
         logger,
+        intrinsics: dict | None = None,
     ) -> None:
         """Project vertex colours from images using camera poses and write a
         simple texture atlas PNG + MTL file."""
@@ -407,9 +411,19 @@ class ReconstructionPipeline:
                 logger.warning("Non-invertible pose for %s, skipping.", img_path)
                 continue
 
-            # Simple pinhole projection
-            fx = fy = max(w, h) * 0.8
-            cx, cy = w / 2.0, h / 2.0
+            # Use real intrinsics if available, otherwise estimate
+            if intrinsics:
+                fx = intrinsics["fx"]
+                fy = intrinsics["fy"]
+                cx = intrinsics["cx"]
+                cy = intrinsics["cy"]
+            else:
+                fx = fy = max(w, h) * 0.8
+                cx, cy = w / 2.0, h / 2.0
+
+            # ARKit/OpenGL convention: camera looks along -Z, flip Y and Z
+            flip = np.diag([1.0, -1.0, -1.0, 1.0])
+            cam_from_world = flip @ cam_from_world
 
             # Transform vertices to camera frame
             ones = np.ones((n_verts, 1))
@@ -560,6 +574,7 @@ class ReconstructionPipeline:
         self,
         images: List[dict],
         mesh: o3d.geometry.TriangleMesh,
+        intrinsics: dict | None = None,
     ) -> FeatureDatabase:
         """Extract ORB features from keyframes and build a visual feature database.
 
@@ -622,8 +637,14 @@ class ReconstructionPipeline:
                 continue
 
             # --- Step 2b: Estimate intrinsics from image size ---
-            fx = fy = max(w, h) * 0.8
-            cx, cy = w / 2.0, h / 2.0
+            if intrinsics:
+                fx = intrinsics["fx"]
+                fy = intrinsics["fy"]
+                cx = intrinsics["cx"]
+                cy = intrinsics["cy"]
+            else:
+                fx = fy = max(w, h) * 0.8
+                cx, cy = w / 2.0, h / 2.0
 
             # --- Step 2c: Backproject 2D keypoints to 3D via ray-mesh intersection ---
             valid_keypoints: List[tuple[float, float]] = []
@@ -632,18 +653,18 @@ class ReconstructionPipeline:
 
             # Build rays for all keypoints at once for efficiency
             rays_list = []
+            R = pose[:3, :3]
+            t = pose[:3, 3]
             for kp in kps:
                 px, py = kp.pt
                 # Convert pixel to normalised camera coordinates
                 x_cam = (px - cx) / fx
                 y_cam = (py - cy) / fy
-                # Ray direction in camera frame (looking along +Z)
-                dir_cam = np.array([x_cam, y_cam, 1.0])
+                # ARKit/OpenGL convention: camera looks along -Z
+                dir_cam = np.array([x_cam, -y_cam, -1.0])
                 dir_cam = dir_cam / np.linalg.norm(dir_cam)
 
                 # Transform ray to world coordinates
-                R = pose[:3, :3]
-                t = pose[:3, 3]
                 origin_world = t
                 dir_world = R @ dir_cam
 
@@ -891,6 +912,15 @@ class ReconstructionPipeline:
 
         logger.info("Loaded %d frames from poses.json", len(images))
 
+        # --- Load intrinsics.json if available ---
+        intrinsics_path = os.path.join(input_dir, "intrinsics.json")
+        intrinsics = None
+        if os.path.isfile(intrinsics_path):
+            with open(intrinsics_path, "r", encoding="utf-8") as f:
+                intrinsics = json.load(f)
+            logger.info("Loaded camera intrinsics: fx=%.1f fy=%.1f cx=%.1f cy=%.1f",
+                        intrinsics["fx"], intrinsics["fy"], intrinsics["cx"], intrinsics["cy"])
+
         # --- Step 1: Point cloud preprocessing ---
         logger.info("Step 1/6: Point cloud preprocessing")
         cloud = self.process_point_cloud(ply_path)
@@ -908,12 +938,12 @@ class ReconstructionPipeline:
 
         # --- Step 4: Texture mapping ---
         logger.info("Step 4/6: Texture mapping")
-        textured_mesh = self.generate_texture(simplified_mesh, images)
+        textured_mesh = self.generate_texture(simplified_mesh, images, intrinsics)
         logger.info("Texture mapping complete (quality=%.3f)", textured_mesh.quality_score or 0.0)
 
         # --- Step 5: Feature extraction ---
         logger.info("Step 5/6: Feature extraction")
-        features = self.build_feature_database(images, simplified_mesh)
+        features = self.build_feature_database(images, simplified_mesh, intrinsics)
         logger.info("Feature database built: %d keyframes", len(features.keyframes))
 
         # --- Step 6: Asset bundle export ---

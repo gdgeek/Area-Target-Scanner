@@ -1,0 +1,11 @@
+.git
+.hypothesis
+.pytest_cache
+.kiro
+data
+ios_scanner
+unity_plugin
+tests
+__pycache__
+*.pyc
+.DS_Store

@@ -168,3 +168,25 @@ class AssetManifest:
     keyframe_count: int
     feature_type: str
     created_at: str
+
+@dataclass
+class ScanInput:
+    """Validated scan input data from an iOS scan ZIP.
+
+    Contains paths to the textured model files (model.obj + texture.jpg + model.mtl),
+    a list of image frames with their 4x4 pose matrices, and optional camera intrinsics.
+
+    Attributes:
+        obj_path: Path to the OBJ mesh file.
+        texture_path: Path to the texture image file.
+        mtl_path: Path to the MTL material file.
+        images: List of dicts, each with "path" (str) and "pose" (np.ndarray shape (4,4)).
+        intrinsics: Camera intrinsic parameters dict, or None if not available.
+    """
+
+    obj_path: str
+    texture_path: str
+    mtl_path: str
+    images: List[dict]  # [{"path": str, "pose": NDArray (4,4)}]
+    intrinsics: Optional[dict]
+

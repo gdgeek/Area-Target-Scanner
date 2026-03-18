@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Area Target 处理管线</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+.container { max-width: 560px; width: 100%; padding: 2rem; }
+h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: #f8fafc; }
+.subtitle { color: #94a3b8; margin-bottom: 2rem; font-size: 0.9rem; }
+.upload-area { border: 2px dashed #334155; border-radius: 12px; padding: 3rem 2rem; text-align: center; cursor: pointer; transition: all 0.2s; margin-bottom: 1.5rem; }
+.upload-area:hover, .upload-area.dragover { border-color: #3b82f6; background: #1e293b; }
+.upload-area p { color: #94a3b8; margin-top: 0.5rem; font-size: 0.85rem; }
+.upload-icon { font-size: 2.5rem; }
+input[type="file"] { display: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>📐 Area Target 处理管线</h1>
+  <p class="subtitle">上传扫描 ZIP 文件，自动执行点云→网格→纹理→特征→资产导出</p>
+
+  <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
+    <div class="upload-icon">📁</div>
+    <p>点击或拖拽 ZIP 文件到此处</p>
+  </div>
+  <input type="file" id="fileInput" accept=".zip">
+
+  <div id="jobPanel" style="display:none;">
+    <div style="background:#1e293b;border-radius:12px;padding:1.5rem;margin-bottom:1rem;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:0.75rem;">
+        <span id="stepLabel" style="color:#94a3b8;font-size:0.85rem;">等待处理</span>
+        <span id="progressPct" style="color:#3b82f6;font-size:0.85rem;font-weight:600;">0%</span>
+      </div>
+      <div style="background:#334155;border-radius:6px;height:8px;overflow:hidden;">
+        <div id="progressBar" style="background:linear-gradient(90deg,#3b82f6,#8b5cf6);height:100%;width:0%;transition:width 0.5s ease;border-radius:6px;"></div>
+      </div>
+      <div id="statusMsg" style="margin-top:1rem;font-size:0.85rem;color:#94a3b8;"></div>
+    </div>
+    <a id="downloadBtn" href="#" style="display:none;text-decoration:none;background:#3b82f6;color:#fff;padding:0.75rem 1.5rem;border-radius:8px;text-align:center;font-weight:500;width:100%;display:none;">
+      ⬇ 下载资产包
+    </a>
+  </div>
+</div>
+
+<script>
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const jobPanel = document.getElementById('jobPanel');
+const stepLabel = document.getElementById('stepLabel');
+const progressPct = document.getElementById('progressPct');
+const progressBar = document.getElementById('progressBar');
+const statusMsg = document.getElementById('statusMsg');
+const downloadBtn = document.getElementById('downloadBtn');
+
+['dragenter','dragover'].forEach(e => dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.add('dragover'); }));
+['dragleave','drop'].forEach(e => dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.remove('dragover'); }));
+dropZone.addEventListener('drop', ev => { if(ev.dataTransfer.files.length) uploadFile(ev.dataTransfer.files[0]); });
+fileInput.addEventListener('change', () => { if(fileInput.files.length) uploadFile(fileInput.files[0]); });
+
+async function uploadFile(file) {
+  if(!file.name.endsWith('.zip')) { alert('请上传 ZIP 文件'); return; }
+  dropZone.style.display = 'none';
+  jobPanel.style.display = 'block';
+  statusMsg.textContent = '正在上传...';
+
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch('/api/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if(data.error) { statusMsg.textContent = '错误: ' + data.error; return; }
+    pollStatus(data.job_id);
+  } catch(e) { statusMsg.textContent = '上传失败: ' + e.message; }
+}
+
+function pollStatus(jobId) {
+  const iv = setInterval(async () => {
+    try {
+      const res = await fetch('/api/status/' + jobId);
+      const job = await res.json();
+      stepLabel.textContent = job.step || '';
+      progressPct.textContent = job.progress + '%';
+      progressBar.style.width = job.progress + '%';
+
+      if(job.status === 'completed') {
+        clearInterval(iv);
+        statusMsg.textContent = '处理完成!';
+        statusMsg.style.color = '#4ade80';
+        downloadBtn.href = '/api/download/' + jobId;
+        downloadBtn.style.display = 'block';
+      } else if(job.status === 'failed') {
+        clearInterval(iv);
+        statusMsg.textContent = '失败: ' + (job.error || '未知错误');
+        statusMsg.style.color = '#f87171';
+        progressBar.style.background = '#ef4444';
+      } else {
+        statusMsg.textContent = '处理中...';
+      }
+    } catch(e) {}
+  }, 1500);
+}
+</script>
+</body>
+</html>
