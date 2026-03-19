@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import math
-import os
 import sqlite3
-import tempfile
 
 import numpy as np
-import pytest
 from sklearn.cluster import KMeans
 
 from processing_pipeline.feature_db import (

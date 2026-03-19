@@ -19,7 +19,10 @@ import numpy as np
 import open3d as o3d
 import pytest
 
-from processing_pipeline.pipeline import ReconstructionPipeline
+
+def _simplify_mesh(mesh: o3d.geometry.TriangleMesh, target_faces: int) -> o3d.geometry.TriangleMesh:
+    """Simplify mesh using Open3D quadric decimation (replaces removed ReconstructionPipeline)."""
+    return mesh.simplify_quadric_decimation(target_number_of_triangles=target_faces)
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +91,6 @@ class TestMeshReconstructionProperties:
 
 
 class TestMeshSimplificationProperties:
-    """Propeclass TestMeshSimplificationProperties:
     """Property P3 — Validates: Requirements 6.3, 6.4, 6.5"""
 
     @pytest.mark.parametrize("mesh_getter", [_get_sphere_mesh, _get_ellipsoid_mesh],
@@ -98,8 +100,7 @@ class TestMeshSimplificationProperties:
         mesh = mesh_getter()
         if len(mesh.triangles) <= target_faces:
             pytest.skip("mesh already below target")
-        pipeline = ReconstructionPipeline()
-        simplified = pipeline.simplify_mesh(copy.deepcopy(mesh), target_faces=target_faces)
+        simplified = _simplify_mesh(copy.deepcopy(mesh), target_faces=target_faces)
         assert len(simplified.triangles) <= target_faces
 
     @pytest.mark.parametrize("mesh_getter", [_get_sphere_mesh, _get_ellipsoid_mesh],
@@ -109,9 +110,8 @@ class TestMeshSimplificationProperties:
         mesh = mesh_getter()
         if len(mesh.triangles) <= target_faces:
             pytest.skip("mesh already below target")
-        pipeline = ReconstructionPipeline()
         orig_min, orig_max = _bounding_box_extents(mesh)
-        simplified = pipeline.simplify_mesh(copy.deepcopy(mesh), target_faces=target_faces)
+        simplified = _simplify_mesh(copy.deepcopy(mesh), target_faces=target_faces)
         simp_min, simp_max = _bounding_box_extents(simplified)
         orig_extent = orig_max - orig_min
         safe_extent = np.where(orig_extent > 1e-10, orig_extent, 1.0)

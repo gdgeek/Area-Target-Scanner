@@ -29,6 +29,10 @@ A10017 /* GLBExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1001
 		A10022 /* TextureAtlasRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10022 /* TextureAtlasRenderer.swift */; };
 		A10023 /* TexturedMeshExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10023 /* TexturedMeshExporter.swift */; };
 		A10024 /* TextureMappingPropertyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10024 /* TextureMappingPropertyTests.swift */; };
+		A10025 /* MeshExporterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10026 /* MeshExporterTests.swift */; };
+		A10026 /* ScanViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10027 /* ScanViewModelTests.swift */; };
+		A10027 /* ScanDataExporterEdgeCaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10028 /* ScanDataExporterEdgeCaseTests.swift */; };
+		A10028 /* TextureMappingPipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10029 /* TextureMappingPipelineTests.swift */; };
 		A10030 /* xatlas.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B10030 /* xatlas.cpp */; };
 		A10031 /* XAtlasBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = B10031 /* XAtlasBridge.mm */; };
 		A10040 /* ModelPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10040 /* ModelPreviewView.swift */; };
@@ -69,6 +73,10 @@ B10017 /* GLBExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = so
 		B10023 /* TexturedMeshExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TexturedMeshExporter.swift; sourceTree = "<group>"; };
 		B10024 /* TextureMappingPropertyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextureMappingPropertyTests.swift; sourceTree = "<group>"; };
 		B10025 /* xatlas.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = xatlas.h; sourceTree = "<group>"; };
+		B10026 /* MeshExporterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshExporterTests.swift; sourceTree = "<group>"; };
+		B10027 /* ScanViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanViewModelTests.swift; sourceTree = "<group>"; };
+		B10028 /* ScanDataExporterEdgeCaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanDataExporterEdgeCaseTests.swift; sourceTree = "<group>"; };
+		B10029 /* TextureMappingPipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextureMappingPipelineTests.swift; sourceTree = "<group>"; };
 		B10030 /* xatlas.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = xatlas.cpp; sourceTree = "<group>"; };
 		B10031 /* XAtlasBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = XAtlasBridge.mm; sourceTree = "<group>"; };
 		B10032 /* XAtlasBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = XAtlasBridge.h; sourceTree = "<group>"; };
@@ -165,6 +173,10 @@ B10017 /* GLBExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = so
 			children = (
 				B10012 /* ScanDataExporterTests.swift */,
 				B10024 /* TextureMappingPropertyTests.swift */,
+				B10026 /* MeshExporterTests.swift */,
+				B10027 /* ScanViewModelTests.swift */,
+				B10028 /* ScanDataExporterEdgeCaseTests.swift */,
+				B10029 /* TextureMappingPipelineTests.swift */,
 			);
 			path = AreaTargetScannerTests;
 			sourceTree = "<group>";
@@ -327,6 +339,10 @@ B10017 /* GLBExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = so
 			files = (
 				A10012 /* ScanDataExporterTests.swift in Sources */,
 				A10024 /* TextureMappingPropertyTests.swift in Sources */,
+				A10025 /* MeshExporterTests.swift in Sources */,
+				A10026 /* ScanViewModelTests.swift in Sources */,
+				A10027 /* ScanDataExporterEdgeCaseTests.swift in Sources */,
+				A10028 /* TextureMappingPipelineTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

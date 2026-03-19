@@ -1,4 +1,7 @@
 {
+  "testables": [
+    "com.areatarget.tracking"
+  ],
   "dependencies": {
     "com.areatarget.tracking": "file:../../unity_plugin/AreaTargetPlugin",
     "com.unity.2d.sprite": "1.0.0",

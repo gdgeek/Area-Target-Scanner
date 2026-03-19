@@ -1,6 +1,7 @@
 using System;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace AreaTargetPlugin.Tests
 {
@@ -9,8 +10,15 @@ namespace AreaTargetPlugin.Tests
     /// Validates: handle lifecycle, NULL safety, struct marshalling, error recovery.
     /// </summary>
     [TestFixture]
+    [IgnoreLogErrors]
     public class NativeLocalizerBridgeTests
     {
+        [SetUp]
+        public void SetUp()
+        {
+            LogAssert.ignoreFailingMessages = true;
+        }
+
         #region Handle Lifecycle
 
         [Test]

@@ -1,5 +1,5 @@
 {
-  "name": "AreaTargetPlugin.Tests",
+  "name": "AreaTargetPlugin.Tests.Property",
   "rootNamespace": "AreaTargetPlugin.Tests",
   "references": [
     "AreaTargetPlugin.Runtime"
@@ -12,14 +12,13 @@
   "overrideReferences": true,
   "precompiledReferences": [
     "nunit.framework.dll",
-    "Microsoft.Data.Sqlite.dll",
-    "SQLitePCLRaw.core.dll",
-    "SQLitePCLRaw.batteries_v2.dll",
-    "SQLitePCLRaw.provider.e_sqlite3.dll"
+    "FsCheck.dll",
+    "FsCheck.NUnit.dll"
   ],
   "autoReferenced": false,
   "defineConstraints": [
-    "UNITY_INCLUDE_TESTS"
+    "UNITY_INCLUDE_TESTS",
+    "FSCHECK_AVAILABLE"
   ],
   "versionDefines": [],
   "noEngineReferences": false

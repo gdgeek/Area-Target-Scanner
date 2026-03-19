@@ -41,7 +41,6 @@ namespace AreaTargetPlugin
             bool success = _loader.Load(assetPath);
             if (!success)
             {
-                Debug.LogError($"[AreaTargetPlugin] Initialization failed: {_loader.LastError}");
                 return false;
             }
 

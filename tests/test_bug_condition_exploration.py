@@ -13,12 +13,9 @@ import inspect
 import io
 import os
 import re
-import tempfile
 import time
-import zipfile
 
 import numpy as np
-import pytest
 
 
 # ---------------------------------------------------------------------------
