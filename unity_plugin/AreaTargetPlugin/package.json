@@ -18,7 +18,7 @@
     "name": "Area Target Scanner",
     "url": "https://github.com/area-target-scanner"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "samples": [
     {
       "displayName": "Area Target Example",
