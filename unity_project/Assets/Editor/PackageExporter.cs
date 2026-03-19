@@ -2,41 +2,46 @@ using UnityEditor;
 using UnityEngine;
 using System.IO;
 using System.Collections.Generic;
-using System.Linq;
 
 public static class PackageExporter
 {
     [MenuItem("Tools/Export AreaTargetPlugin Package")]
     public static void Export()
     {
-        // Resolve the local package path
-        var packagePath = "Packages/com.areatarget.tracking";
         var outputPath = Path.GetFullPath(
             Path.Combine(Application.dataPath, "../../unity_plugin/AreaTargetPlugin/AreaTargetPlugin-1.2.0.unitypackage")
         );
 
-        // Collect all assets under the package
         var assetPaths = new List<string>();
-        CollectAssets(packagePath + "/Runtime", assetPaths);
-        CollectAssets(packagePath + "/Editor", assetPaths);
-        CollectAssets(packagePath + "/Tests", assetPaths);
 
-        // Include root files
+        // 1. Package source code (Runtime, Editor, Tests)
+        CollectAssets("Packages/com.areatarget.tracking/Runtime", assetPaths);
+        CollectAssets("Packages/com.areatarget.tracking/Editor", assetPaths);
+        CollectAssets("Packages/com.areatarget.tracking/Tests", assetPaths);
+
+        // Package root files
         string[] rootFiles = {
             "package.json", "CHANGELOG.md", "LICENSE.md", "README.md",
             "TEST_GUIDE.md", "Runtime.meta", "Editor.meta", "Tests.meta"
         };
         foreach (var f in rootFiles)
         {
-            var p = packagePath + "/" + f;
-            if (File.Exists(Path.GetFullPath(p)) || AssetDatabase.LoadAssetAtPath<Object>(p) != null)
+            var p = "Packages/com.areatarget.tracking/" + f;
+            if (AssetDatabase.LoadAssetAtPath<Object>(p) != null)
                 assetPaths.Add(p);
         }
+
+        // 2. Native plugins (dylib, so, dll) and managed DLLs
+        CollectAssets("Assets/Plugins", assetPaths);
+
+        // 3. link.xml (prevents IL2CPP from stripping SQLite assemblies)
+        if (AssetDatabase.LoadAssetAtPath<Object>("Assets/link.xml") != null)
+            assetPaths.Add("Assets/link.xml");
 
         if (assetPaths.Count == 0)
         {
             Debug.LogError("[PackageExporter] No assets found to export.");
-            EditorApplication.Exit(1);
+            if (Application.isBatchMode) EditorApplication.Exit(1);
             return;
         }
 
@@ -48,7 +53,6 @@ public static class PackageExporter
         );
         Debug.Log($"[PackageExporter] Done: {outputPath}");
 
-        // Exit if running in batch mode
         if (Application.isBatchMode)
             EditorApplication.Exit(0);
     }
