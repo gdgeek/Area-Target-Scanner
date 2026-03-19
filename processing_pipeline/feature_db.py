@@ -61,26 +61,28 @@ def _compute_idf_weights(
     *df* is the number of keyframes that contain at least one descriptor
     assigned to that word.
 
+    Word assignment uses Hamming distance (popcount of XOR) to match the
+    C++ ``computeBoW`` implementation.
+
     Args:
         keyframes: Keyframe list from the feature database.
         n_words: Number of visual words (K).
-        vocabulary_centers: (K, D) cluster centres used for word assignment.
+        vocabulary_centers: (K, D) uint8 vocabulary medoid descriptors.
 
     Returns:
         (K,) array of IDF weights.
     """
+    from processing_pipeline.feature_extraction import _hamming_word_assignment
+
     n_keyframes = len(keyframes)
     doc_freq = np.zeros(n_words, dtype=np.float64)
+
+    vocabulary_uint8 = np.asarray(vocabulary_centers, dtype=np.uint8)
 
     for kf in keyframes:
         if kf.descriptors is None or len(kf.descriptors) == 0:
             continue
-        desc_float = kf.descriptors.astype(np.float64)
-        # Use pairwise distance to assign words (same logic as KMeans.predict)
-        # but we avoid requiring a full KMeans object here.
-        diffs = desc_float[:, np.newaxis, :] - vocabulary_centers[np.newaxis, :, :]
-        dists = np.sum(diffs ** 2, axis=2)
-        labels = np.argmin(dists, axis=1)
+        labels = _hamming_word_assignment(kf.descriptors, vocabulary_uint8)
         unique_words = set(labels.tolist())
         for w in unique_words:
             doc_freq[w] += 1.0
@@ -139,11 +141,11 @@ def save_feature_database(db: FeatureDatabase, db_path: str) -> None:
 
         # -- vocabulary ----------------------------------------------------
         if db.vocabulary is not None:
-            centers = np.asarray(db.vocabulary.cluster_centers_, dtype=np.float64)
-            idf_weights = _compute_idf_weights(db.keyframes, len(centers), centers)
+            medoids = np.asarray(db.vocabulary, dtype=np.uint8)
+            idf_weights = _compute_idf_weights(db.keyframes, len(medoids), medoids)
 
-            for word_id in range(len(centers)):
-                desc_blob = centers[word_id].tobytes()
+            for word_id in range(len(medoids)):
+                desc_blob = medoids[word_id].tobytes()
                 cur.execute(
                     "INSERT INTO vocabulary (word_id, descriptor, idf_weight) "
                     "VALUES (?, ?, ?)",
@@ -159,8 +161,8 @@ def load_feature_database(db_path: str) -> FeatureDatabase:
     """Load a :class:`FeatureDatabase` from a SQLite file.
 
     Reads the ``keyframes``, ``features``, and ``vocabulary`` tables and
-    reconstructs the in-memory data structures including a scikit-learn
-    :class:`~sklearn.cluster.KMeans` vocabulary object.
+    reconstructs the in-memory data structures.  The vocabulary is returned
+    as a uint8 medoid array (not a KMeans object).
 
     Args:
         db_path: Filesystem path to the SQLite database.
@@ -227,20 +229,10 @@ def load_feature_database(db_path: str) -> FeatureDatabase:
 
         vocabulary = None
         if vocab_rows:
-            centers = []
+            medoids = []
             for word_id, desc_blob, idf_weight in vocab_rows:
-                centers.append(np.frombuffer(desc_blob, dtype=np.float64).copy())
-            centers_array = np.array(centers, dtype=np.float64)
-
-            # Reconstruct a KMeans object with the stored cluster centres
-            from sklearn.cluster import KMeans
-
-            k = len(centers_array)
-            kmeans = KMeans(n_clusters=k, n_init=1, max_iter=1, random_state=42)
-            # Fit on the centres themselves so cluster_centers_ is set correctly
-            kmeans.fit(centers_array)
-            kmeans.cluster_centers_ = centers_array
-            vocabulary = kmeans
+                medoids.append(np.frombuffer(desc_blob, dtype=np.uint8).copy())
+            vocabulary = np.array(medoids, dtype=np.uint8)
 
         return FeatureDatabase(
             keyframes=keyframes,

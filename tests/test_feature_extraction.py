@@ -18,7 +18,7 @@ from processing_pipeline.models import (
     KeyframeData,
     ProcessedCloud,
 )
-from processing_pipeline.pipeline import ReconstructionPipeline
+from processing_pipeline.feature_extraction import build_feature_database
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +93,6 @@ class TestBuildFeatureDatabaseBasic:
 
     def setup_method(self):
         import copy
-        self.pipeline = ReconstructionPipeline()
         self.mesh = copy.deepcopy(_build_sphere_mesh())
         self.tmpdir = tempfile.mkdtemp()
 
@@ -108,12 +107,12 @@ class TestBuildFeatureDatabaseBasic:
 
     def test_returns_feature_database(self):
         images = self._make_images(2)
-        db = self.pipeline.build_feature_database(images, self.mesh)
+        db = build_feature_database(images, self.mesh)
         assert isinstance(db, FeatureDatabase)
 
     def test_keyframes_have_correct_structure(self):
         images = self._make_images(2)
-        db = self.pipeline.build_feature_database(images, self.mesh)
+        db = build_feature_database(images, self.mesh)
         for kf in db.keyframes:
             assert isinstance(kf, KeyframeData)
             assert len(kf.keypoints) == len(kf.points_3d)
@@ -124,14 +123,14 @@ class TestBuildFeatureDatabaseBasic:
     def test_keyframes_have_at_least_20_features(self):
         """Requirement 8.3: keyframes with < 20 valid features are skipped."""
         images = self._make_images(3)
-        db = self.pipeline.build_feature_database(images, self.mesh)
+        db = build_feature_database(images, self.mesh)
         for kf in db.keyframes:
             assert len(kf.keypoints) >= 20
 
     def test_3d_points_near_mesh_surface(self):
         """Requirement 8.2: 3D points come from ray-mesh intersection."""
         images = self._make_images(2)
-        db = self.pipeline.build_feature_database(images, self.mesh)
+        db = build_feature_database(images, self.mesh)
         bbox = self.mesh.get_axis_aligned_bounding_box()
         min_b = np.asarray(bbox.min_bound) - 0.5  # tolerance for Poisson mesh
         max_b = np.asarray(bbox.max_bound) + 0.5
@@ -144,51 +143,52 @@ class TestBuildFeatureDatabaseBasic:
 
     def test_camera_pose_stored(self):
         images = self._make_images(1)
-        db = self.pipeline.build_feature_database(images, self.mesh)
+        db = build_feature_database(images, self.mesh)
         if db.keyframes:
             kf = db.keyframes[0]
             np.testing.assert_array_almost_equal(
                 kf.camera_pose, images[0]["pose"]
             )
 
-    def test_vocabulary_is_kmeans(self):
-        """Requirement 8.4: vocabulary is a trained KMeans model."""
-        from sklearn.cluster import KMeans
-
+    def test_vocabulary_is_uint8_medoids(self):
+        """Requirement 8.4: vocabulary is a uint8 medoid array."""
         images = self._make_images(2)
-        db = self.pipeline.build_feature_database(images, self.mesh)
+        db = build_feature_database(images, self.mesh)
         if db.keyframes:
-            assert isinstance(db.vocabulary, KMeans)
+            assert isinstance(db.vocabulary, np.ndarray)
+            assert db.vocabulary.dtype == np.uint8
+            assert db.vocabulary.ndim == 2
+            assert db.vocabulary.shape[1] == 32  # ORB descriptor size
         else:
             assert db.vocabulary is None
 
     def test_global_descriptors_shape(self):
         """Requirement 8.5: global_descriptors has shape (n_keyframes, K)."""
         images = self._make_images(2)
-        db = self.pipeline.build_feature_database(images, self.mesh)
+        db = build_feature_database(images, self.mesh)
         if db.keyframes:
             assert db.global_descriptors is not None
             assert db.global_descriptors.shape[0] == len(db.keyframes)
-            k = db.vocabulary.n_clusters
+            k = len(db.vocabulary)  # number of vocabulary words
             assert db.global_descriptors.shape[1] == k
         else:
             assert db.global_descriptors is None
 
-    def test_bow_vectors_l1_normalized(self):
-        """Requirement 8.5: BoW vectors are L1-normalized (sum to 1.0)."""
+    def test_bow_vectors_l2_normalized(self):
+        """Requirement 8.5: BoW vectors are L2-normalized (norm ≈ 1.0)."""
         images = self._make_images(2)
-        db = self.pipeline.build_feature_database(images, self.mesh)
+        db = build_feature_database(images, self.mesh)
         if db.keyframes and db.global_descriptors is not None:
             for i in range(db.global_descriptors.shape[0]):
-                l1 = np.sum(db.global_descriptors[i])
-                np.testing.assert_almost_equal(l1, 1.0, decimal=6)
+                l2 = np.linalg.norm(db.global_descriptors[i])
+                np.testing.assert_almost_equal(l2, 1.0, decimal=6)
 
-    def test_bow_vectors_non_negative(self):
-        """BoW vectors should contain only non-negative values."""
+    def test_bow_vectors_finite(self):
+        """BoW vectors should contain only finite values (TF-IDF may be negative)."""
         images = self._make_images(2)
-        db = self.pipeline.build_feature_database(images, self.mesh)
+        db = build_feature_database(images, self.mesh)
         if db.keyframes and db.global_descriptors is not None:
-            assert np.all(db.global_descriptors >= 0)
+            assert np.all(np.isfinite(db.global_descriptors))
 
 
 class TestBuildFeatureDatabaseEdgeCases:
@@ -196,44 +196,51 @@ class TestBuildFeatureDatabaseEdgeCases:
 
     def setup_method(self):
         import copy
-        self.pipeline = ReconstructionPipeline()
         self.mesh = copy.deepcopy(_build_sphere_mesh())
         self.tmpdir = tempfile.mkdtemp()
 
     def test_empty_images_list(self):
-        db = self.pipeline.build_feature_database([], self.mesh)
+        db = build_feature_database([], self.mesh)
         assert isinstance(db, FeatureDatabase)
         assert len(db.keyframes) == 0
         assert db.vocabulary is None
         assert db.global_descriptors is None
 
     def test_unreadable_image_skipped(self):
-        """Images that can't be read should be skipped gracefully."""
+        """Images that can't be read should be skipped gracefully.
+
+        After Bug 6 fix, build_feature_database raises ValueError when all
+        images are skipped (no keyframes with >= 20 features).
+        """
         images = [{"path": "/nonexistent/image.png", "pose": np.eye(4)}]
-        db = self.pipeline.build_feature_database(images, self.mesh)
-        assert len(db.keyframes) == 0
+        with pytest.raises(ValueError, match="Feature database is empty"):
+            build_feature_database(images, self.mesh)
 
     def test_blank_image_few_features(self):
-        """A blank (uniform) image produces few/no ORB features and is skipped."""
+        """A blank (uniform) image produces few/no ORB features and is skipped.
+
+        After Bug 6 fix, build_feature_database raises ValueError when all
+        images produce insufficient features.
+        """
         blank = np.full((480, 640), 128, dtype=np.uint8)
         path = _save_image(blank, self.tmpdir, "blank.png")
         images = [{"path": path, "pose": _make_camera_pose()}]
-        db = self.pipeline.build_feature_database(images, self.mesh)
-        # Blank image should produce < 20 valid features → skipped
-        assert len(db.keyframes) == 0
+        with pytest.raises(ValueError, match="Feature database is empty"):
+            build_feature_database(images, self.mesh)
 
     def test_camera_far_away_no_hits(self):
-        """Camera very far from mesh — rays miss → keyframe skipped."""
+        """Camera very far from mesh — rays miss → keyframe skipped.
+
+        After Bug 6 fix, build_feature_database raises ValueError when all
+        images produce insufficient features.
+        """
         img = _make_textured_image()
         path = _save_image(img, self.tmpdir, "far.png")
         # Camera at z=1000 looking at origin — the sphere is radius ~1
         pose = _make_camera_pose(tz=1000.0)
         images = [{"path": path, "pose": pose}]
-        db = self.pipeline.build_feature_database(images, self.mesh)
-        # Most rays will miss the small sphere at such distance
-        # Either 0 keyframes or keyframes with >= 20 features (invariant)
-        for kf in db.keyframes:
-            assert len(kf.keypoints) >= 20
+        with pytest.raises(ValueError, match="Feature database is empty"):
+            build_feature_database(images, self.mesh)
 
 
 class TestBuildFeatureDatabaseORB:
@@ -241,7 +248,6 @@ class TestBuildFeatureDatabaseORB:
 
     def setup_method(self):
         import copy
-        self.pipeline = ReconstructionPipeline()
         self.mesh = copy.deepcopy(_build_sphere_mesh())
         self.tmpdir = tempfile.mkdtemp()
 
@@ -259,6 +265,6 @@ class TestBuildFeatureDatabaseORB:
         path = _save_image(img, self.tmpdir, "textured.png")
         pose = _make_camera_pose(tz=3.0)
         images = [{"path": path, "pose": pose}]
-        db = self.pipeline.build_feature_database(images, self.mesh)
+        db = build_feature_database(images, self.mesh)
         for kf in db.keyframes:
             assert len(kf.keypoints) <= 2000

@@ -113,36 +113,14 @@ class OptimizedPipeline:
         if not os.path.isfile(glb_path) or os.path.getsize(glb_path) == 0:
             raise RuntimeError("下载的 GLB 文件为空")
         return glb_path
+    @staticmethod
+    def _trimesh_to_o3d(mesh_tri):
+        """Convert a trimesh.Trimesh to an open3d.geometry.TriangleMesh.
 
-    def build_feature_database(
-        self,
-        glb_path: str,
-        images: list[dict],
-        intrinsics: dict | None = None,
-    ) -> FeatureDatabase:
-        """Build an ORB + BoW feature database from the GLB mesh and keyframes.
-
-        Raises:
-            RuntimeError: If feature extraction fails.
+        Handles the int64→int32 face conversion required by Open3D's
+        Vector3iVector to avoid segfaults.
         """
-        import trimesh
         import open3d as o3d
-
-        from processing_pipeline.pipeline import ReconstructionPipeline
-
-        # Load GLB with trimesh
-        scene = trimesh.load(glb_path)
-
-        # If the GLB contains multiple meshes (Scene), merge them into one
-        if isinstance(scene, trimesh.Scene):
-            mesh_tri = scene.dump(concatenate=True)
-        else:
-            mesh_tri = scene
-
-        # Convert trimesh mesh to Open3D TriangleMesh for ray-casting
-        # Note: trimesh may produce int64 faces after GLB round-trip, but
-        # Open3D's Vector3iVector requires int32 to avoid segfaults.
-        import numpy as np
 
         o3d_mesh = o3d.geometry.TriangleMesh()
         o3d_mesh.vertices = o3d.utility.Vector3dVector(
@@ -151,19 +129,47 @@ class OptimizedPipeline:
         o3d_mesh.triangles = o3d.utility.Vector3iVector(
             np.asarray(mesh_tri.faces, dtype=np.int32)
         )
+        return o3d_mesh
+
+    def build_feature_database(
+        self,
+        mesh_tri,
+        images: list[dict],
+        intrinsics: dict | None = None,
+    ) -> FeatureDatabase:
+        """Build an ORB + BoW feature database from the trimesh mesh and keyframes.
+
+        Args:
+            mesh_tri: A trimesh.Trimesh object (already loaded and merged).
+            images: List of keyframe image dicts with 'path' and 'pose'.
+            intrinsics: Optional camera intrinsics dict.
+
+        Raises:
+            RuntimeError: If feature extraction fails.
+        """
+        from processing_pipeline.feature_extraction import build_feature_database
+
+        # Convert trimesh mesh to Open3D TriangleMesh for ray-casting
+        o3d_mesh = self._trimesh_to_o3d(mesh_tri)
 
         # Reuse existing ORB + ray-casting + BoW logic
-        return ReconstructionPipeline().build_feature_database(images, o3d_mesh, intrinsics)
+        return build_feature_database(images, o3d_mesh, intrinsics)
 
     def export_asset_bundle(
         self,
         glb_path: str,
+        mesh_tri,
         features: FeatureDatabase,
         output_dir: str,
     ) -> None:
-        """Package optimized.glb, features.db, and manifest.json into *output_dir*."""
-        import trimesh
+        """Package optimized.glb, features.db, and manifest.json into *output_dir*.
 
+        Args:
+            glb_path: Path to the optimized GLB file (copied to output).
+            mesh_tri: A trimesh.Trimesh object for computing AABB bounds.
+            features: The FeatureDatabase to serialize.
+            output_dir: Directory to write the asset bundle into.
+        """
         os.makedirs(output_dir, exist_ok=True)
 
         # 1. Copy GLB
@@ -174,10 +180,8 @@ class OptimizedPipeline:
         db_path = os.path.join(output_dir, "features.db")
         save_feature_database(features, db_path)
 
-        # 3. Compute AABB bounds from GLB mesh
-        scene = trimesh.load(glb_path)
-        mesh = scene.dump(concatenate=True) if isinstance(scene, trimesh.Scene) else scene
-        bounds = mesh.bounds  # [[min_x,min_y,min_z],[max_x,max_y,max_z]]
+        # 3. Compute AABB bounds from the already-loaded mesh
+        bounds = mesh_tri.bounds  # [[min_x,min_y,min_z],[max_x,max_y,max_z]]
 
         # 4. Generate manifest.json
         manifest = {
@@ -216,23 +220,34 @@ class OptimizedPipeline:
             ValueError: If poses.json is malformed.
             RuntimeError: If model optimization or feature extraction fails.
         """
+        import trimesh
+
         logger = logging.getLogger(__name__)
         work_dir = tempfile.mkdtemp(prefix="pipeline_")
+        try:
+            # Step 1
+            logger.info("Step 1/4: 输入验证")
+            scan_input = self.validate_input(scan_dir)
 
-        # Step 1
-        logger.info("Step 1/4: 输入验证")
-        scan_input = self.validate_input(scan_dir)
+            # Step 2
+            logger.info("Step 2/4: 模型优化")
+            glb_path = self.optimize_model(scan_input, work_dir)
 
-        # Step 2
-        logger.info("Step 2/4: 模型优化")
-        glb_path = self.optimize_model(scan_input, work_dir)
+            # Load GLB once
+            scene = trimesh.load(glb_path)
+            if isinstance(scene, trimesh.Scene):
+                mesh_tri = scene.to_geometry()
+            else:
+                mesh_tri = scene
 
-        # Step 3
-        logger.info("Step 3/4: 特征提取")
-        features = self.build_feature_database(
-            glb_path, scan_input.images, scan_input.intrinsics
-        )
+            # Step 3
+            logger.info("Step 3/4: 特征提取")
+            features = self.build_feature_database(
+                mesh_tri, scan_input.images, scan_input.intrinsics
+            )
 
-        # Step 4
-        logger.info("Step 4/4: 资产打包")
-        self.export_asset_bundle(glb_path, features, output_dir)
+            # Step 4
+            logger.info("Step 4/4: 资产打包")
+            self.export_asset_bundle(glb_path, mesh_tri, features, output_dir)
+        finally:
+            shutil.rmtree(work_dir, ignore_errors=True)

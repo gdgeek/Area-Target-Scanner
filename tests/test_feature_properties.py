@@ -21,7 +21,7 @@ from hypothesis import given, settings, HealthCheck
 from hypothesis import strategies as st
 
 from processing_pipeline.models import ProcessedCloud
-from processing_pipeline.pipeline import ReconstructionPipeline
+from processing_pipeline.feature_extraction import build_feature_database
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +133,6 @@ class TestFeatureDatabaseProperties:
 
         **Validates: Requirements 8.7**
         """
-        pipeline = ReconstructionPipeline()
         mesh = copy.deepcopy(_build_sphere_mesh())
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -145,7 +144,7 @@ class TestFeatureDatabaseProperties:
                 pose = _make_camera_pose(tx, ty, tz)
                 images.append({"path": path, "pose": pose})
 
-            db = pipeline.build_feature_database(images, mesh)
+            db = build_feature_database(images, mesh)
 
         # If no keyframes were produced, the property holds vacuously
         if not db.keyframes:

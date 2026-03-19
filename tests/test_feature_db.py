@@ -45,19 +45,40 @@ def _make_keyframe(image_id: int, n_features: int = 50, seed: int = 0) -> Keyfra
 
 def _make_feature_database(n_keyframes: int = 3, n_features: int = 50) -> FeatureDatabase:
     """Build a complete FeatureDatabase with vocabulary and BoW vectors."""
+    from processing_pipeline.feature_extraction import _hamming_word_assignment
+
     keyframes = [_make_keyframe(i, n_features) for i in range(n_keyframes)]
 
-    # Build vocabulary via KMeans
-    all_desc = np.vstack([kf.descriptors.astype(np.float64) for kf in keyframes])
-    k = min(10, len(all_desc))  # small K for speed
+    # Build vocabulary via KMeans, then extract uint8 medoids
+    all_desc_uint8 = np.vstack([kf.descriptors for kf in keyframes])
+    all_desc_float = all_desc_uint8.astype(np.float64)
+    k = min(10, len(all_desc_float))  # small K for speed
     kmeans = KMeans(n_clusters=k, random_state=42, n_init=2, max_iter=20)
-    kmeans.fit(all_desc)
+    kmeans.fit(all_desc_float)
 
-    # Compute BoW vectors
+    # Compute medoids (real uint8 descriptors closest to each center)
+    labels = kmeans.labels_
+    centers_uint8 = kmeans.cluster_centers_.astype(np.uint8)
+    medoids = np.zeros((k, all_desc_uint8.shape[1]), dtype=np.uint8)
+    for c in range(k):
+        mask = labels == c
+        cluster_descs = all_desc_uint8[mask]
+        if len(cluster_descs) == 0:
+            medoids[c] = centers_uint8[c]
+            continue
+        xor = np.bitwise_xor(cluster_descs, centers_uint8[c])
+        hamming_dists = np.zeros(len(cluster_descs), dtype=np.int64)
+        for byte_col in range(xor.shape[1]):
+            hamming_dists += np.array(
+                [bin(b).count("1") for b in xor[:, byte_col]], dtype=np.int64
+            )
+        medoids[c] = cluster_descs[np.argmin(hamming_dists)]
+
+    # Compute BoW vectors using Hamming distance word assignment
     bow = np.zeros((n_keyframes, k), dtype=np.float64)
     for i, kf in enumerate(keyframes):
-        labels = kmeans.predict(kf.descriptors.astype(np.float64))
-        for lbl in labels:
+        word_labels = _hamming_word_assignment(kf.descriptors, medoids)
+        for lbl in word_labels:
             bow[i, lbl] += 1.0
         l1 = bow[i].sum()
         if l1 > 0:
@@ -66,7 +87,7 @@ def _make_feature_database(n_keyframes: int = 3, n_features: int = 50) -> Featur
     return FeatureDatabase(
         keyframes=keyframes,
         global_descriptors=bow,
-        vocabulary=kmeans,
+        vocabulary=medoids,
     )
 
 
@@ -216,21 +237,23 @@ class TestRoundTrip:
         loaded = load_feature_database(db_path)
 
         assert loaded.vocabulary is not None
-        np.testing.assert_array_almost_equal(
-            loaded.vocabulary.cluster_centers_,
-            original.vocabulary.cluster_centers_,
+        np.testing.assert_array_equal(
+            loaded.vocabulary,
+            original.vocabulary,
         )
 
-    def test_vocabulary_predict_consistent(self, tmp_path):
-        """Loaded vocabulary should assign the same labels as the original."""
+    def test_vocabulary_word_assignment_consistent(self, tmp_path):
+        """Loaded vocabulary should assign the same words as the original via Hamming distance."""
+        from processing_pipeline.feature_extraction import _hamming_word_assignment
+
         db_path = str(tmp_path / "features.db")
         original = _make_feature_database()
         save_feature_database(original, db_path)
         loaded = load_feature_database(db_path)
 
-        test_desc = original.keyframes[0].descriptors.astype(np.float64)
-        orig_labels = original.vocabulary.predict(test_desc)
-        loaded_labels = loaded.vocabulary.predict(test_desc)
+        test_desc = original.keyframes[0].descriptors
+        orig_labels = _hamming_word_assignment(test_desc, original.vocabulary)
+        loaded_labels = _hamming_word_assignment(test_desc, loaded.vocabulary)
         np.testing.assert_array_equal(loaded_labels, orig_labels)
 
 
@@ -253,31 +276,30 @@ class TestIDFWeights:
         weights = [row[0] for row in cur.fetchall()]
         conn.close()
 
-        assert len(weights) == db.vocabulary.n_clusters
+        assert len(weights) == len(db.vocabulary)
         # All weights should be finite (IDF can be negative when df >= N)
         for w in weights:
             assert math.isfinite(w)
 
     def test_idf_formula(self, tmp_path):
         """IDF should equal log(N / (1 + df)) for each word."""
+        from processing_pipeline.feature_extraction import _hamming_word_assignment
+
         db_path = str(tmp_path / "features.db")
         db = _make_feature_database(n_keyframes=5, n_features=80)
         save_feature_database(db, db_path)
 
         n_kf = len(db.keyframes)
-        centers = db.vocabulary.cluster_centers_
+        medoids = db.vocabulary
 
-        # Manually compute expected doc frequencies
-        doc_freq = np.zeros(len(centers), dtype=np.float64)
+        # Manually compute expected doc frequencies using Hamming distance
+        doc_freq = np.zeros(len(medoids), dtype=np.float64)
         for kf in db.keyframes:
-            desc_float = kf.descriptors.astype(np.float64)
-            diffs = desc_float[:, np.newaxis, :] - centers[np.newaxis, :, :]
-            dists = np.sum(diffs ** 2, axis=2)
-            labels = np.argmin(dists, axis=1)
+            labels = _hamming_word_assignment(kf.descriptors, medoids)
             for w in set(labels.tolist()):
                 doc_freq[w] += 1.0
 
-        expected_idf = [math.log(n_kf / (1.0 + doc_freq[w])) for w in range(len(centers))]
+        expected_idf = [math.log(n_kf / (1.0 + doc_freq[w])) for w in range(len(medoids))]
 
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
