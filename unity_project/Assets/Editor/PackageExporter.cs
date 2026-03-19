@@ -3,26 +3,32 @@ using UnityEngine;
 using System.IO;
 using System.Collections.Generic;
 
+/// <summary>
+/// Exports AreaTargetPlugin as a .unitypackage with all runtime dependencies.
+/// Tests are excluded — they require com.unity.test-framework and FsCheck
+/// which are dev-only dependencies not needed by end users.
+/// </summary>
 public static class PackageExporter
 {
+    private const string Version = "1.2.0";
+
     [MenuItem("Tools/Export AreaTargetPlugin Package")]
     public static void Export()
     {
         var outputPath = Path.GetFullPath(
-            Path.Combine(Application.dataPath, "../../unity_plugin/AreaTargetPlugin/AreaTargetPlugin-1.2.0.unitypackage")
+            Path.Combine(Application.dataPath,
+                $"../../unity_plugin/AreaTargetPlugin/AreaTargetPlugin-{Version}.unitypackage")
         );
 
         var assetPaths = new List<string>();
 
-        // 1. Package source code (Runtime, Editor, Tests)
+        // 1. Package source code (Runtime + Editor only, no Tests)
         CollectAssets("Packages/com.areatarget.tracking/Runtime", assetPaths);
         CollectAssets("Packages/com.areatarget.tracking/Editor", assetPaths);
-        CollectAssets("Packages/com.areatarget.tracking/Tests", assetPaths);
 
-        // Package root files
+        // Package root metadata files
         string[] rootFiles = {
             "package.json", "CHANGELOG.md", "LICENSE.md", "README.md",
-            "TEST_GUIDE.md", "Runtime.meta", "Editor.meta", "Tests.meta"
         };
         foreach (var f in rootFiles)
         {
@@ -31,7 +37,7 @@ public static class PackageExporter
                 assetPaths.Add(p);
         }
 
-        // 2. Native plugins (dylib, so, dll) and managed DLLs
+        // 2. Native plugins (dylib/so/dll) and managed DLLs
         CollectAssets("Assets/Plugins", assetPaths);
 
         // 3. link.xml (prevents IL2CPP from stripping SQLite assemblies)
@@ -51,7 +57,7 @@ public static class PackageExporter
             outputPath,
             ExportPackageOptions.Recurse
         );
-        Debug.Log($"[PackageExporter] Done: {outputPath}");
+        Debug.Log($"[PackageExporter] Export complete: {outputPath}");
 
         if (Application.isBatchMode)
             EditorApplication.Exit(0);
