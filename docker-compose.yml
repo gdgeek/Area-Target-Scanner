@@ -17,7 +17,7 @@ services:
     restart: unless-stopped
 
   model_optimizer:
-    image: gdgeek/3d-model-optimizer:latest
+    image: 3dugc/3d-model-optimizer:latest
     ports:
       - "3000:3000"
     environment:

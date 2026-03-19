@@ -94,7 +94,7 @@ if (result.State == TrackingState.TRACKING) {
 | Step | What Happens | Tech |
 |------|-------------|------|
 | **Input Validation** | Verify scan ZIP contains mesh, poses, images | — |
-| **Model Optimization** | Simplify & optimize the 3D mesh | [3D-Model-Optimizer](https://github.com/nicedoc/3d-model-optimizer) |
+| **Model Optimization** | Simplify & optimize the 3D mesh | [3D-Model-Optimizer](https://github.com/3dugc/3D-Model-Optimizer) |
 | **Feature Extraction** | Extract ORB features, build BoW vocabulary, compute 3D-2D correspondences | OpenCV, scikit-learn |
 | **Asset Bundling** | Package mesh + texture + feature DB + manifest into a deployable bundle | SQLite, trimesh |
 
