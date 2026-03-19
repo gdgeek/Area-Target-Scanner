@@ -6,12 +6,13 @@ namespace AreaTargetPlugin
 {
     /// <summary>
     /// Loads and validates area target asset bundles from disk.
-    /// Expected asset bundle structure:
-    ///   manifest.json, mesh.obj, texture_atlas.png, features.db
+    /// Expected asset bundle structure (v2.0):
+    ///   manifest.json, optimized.glb, features.db
+    /// GLB format embeds mesh, textures, and materials in a single file.
     /// </summary>
     public class AssetBundleLoader
     {
-        private const string SupportedVersion = "1.0";
+        private const string SupportedVersion = "2.0";
 
         /// <summary>The parsed manifest after a successful load.</summary>
         public AssetManifest Manifest { get; private set; }
@@ -19,14 +20,25 @@ namespace AreaTargetPlugin
         /// <summary>Full path to the loaded mesh file.</summary>
         public string MeshPath { get; private set; }
 
-        /// <summary>Full path to the loaded texture file.</summary>
-        public string TexturePath { get; private set; }
-
         /// <summary>Full path to the loaded feature database file.</summary>
         public string FeatureDbPath { get; private set; }
 
         /// <summary>Error message from the last failed load attempt.</summary>
         public string LastError { get; private set; }
+
+        /// <summary>
+        /// Checks whether a relative path stays within the given base directory.
+        /// Returns false if the resolved path escapes assetPath (path traversal).
+        /// </summary>
+        private static bool IsPathSafe(string assetPath, string relativePath)
+        {
+            string resolvedBase = Path.GetFullPath(assetPath);
+            if (!resolvedBase.EndsWith(Path.DirectorySeparatorChar.ToString()))
+                resolvedBase += Path.DirectorySeparatorChar;
+
+            string resolvedPath = Path.GetFullPath(Path.Combine(assetPath, relativePath));
+            return resolvedPath.StartsWith(resolvedBase);
+        }
 
         /// <summary>
         /// Loads the area target asset bundle at the given path.
@@ -40,7 +52,6 @@ namespace AreaTargetPlugin
             LastError = null;
             Manifest = null;
             MeshPath = null;
-            TexturePath = null;
             FeatureDbPath = null;
 
             if (string.IsNullOrEmpty(assetPath))
@@ -120,9 +131,9 @@ namespace AreaTargetPlugin
                 return false;
             }
 
-            if (string.IsNullOrEmpty(manifest.textureFile))
+            if (string.IsNullOrEmpty(manifest.format) || manifest.format != "glb")
             {
-                LastError = "manifest.json missing 'textureFile' field.";
+                LastError = $"Unsupported asset format: '{manifest.format}' (expected: 'glb').";
                 Debug.LogError($"[AreaTargetPlugin] {LastError}");
                 return false;
             }
@@ -136,6 +147,23 @@ namespace AreaTargetPlugin
 
             // Verify referenced files exist
             string meshPath = Path.Combine(assetPath, manifest.meshFile);
+            string featureDbPath = Path.Combine(assetPath, manifest.featureDbFile);
+
+            // Path traversal detection
+            if (!IsPathSafe(assetPath, manifest.meshFile))
+            {
+                LastError = $"Path traversal detected in meshFile: '{manifest.meshFile}' resolves outside asset directory.";
+                Debug.LogError($"[AreaTargetPlugin] {LastError}");
+                return false;
+            }
+
+            if (!IsPathSafe(assetPath, manifest.featureDbFile))
+            {
+                LastError = $"Path traversal detected in featureDbFile: '{manifest.featureDbFile}' resolves outside asset directory.";
+                Debug.LogError($"[AreaTargetPlugin] {LastError}");
+                return false;
+            }
+
             if (!File.Exists(meshPath))
             {
                 LastError = $"Mesh file not found: {manifest.meshFile}";
@@ -143,15 +171,6 @@ namespace AreaTargetPlugin
                 return false;
             }
 
-            string texturePath = Path.Combine(assetPath, manifest.textureFile);
-            if (!File.Exists(texturePath))
-            {
-                LastError = $"Texture file not found: {manifest.textureFile}";
-                Debug.LogError($"[AreaTargetPlugin] {LastError}");
-                return false;
-            }
-
-            string featureDbPath = Path.Combine(assetPath, manifest.featureDbFile);
             if (!File.Exists(featureDbPath))
             {
                 LastError = $"Feature database not found: {manifest.featureDbFile}";
@@ -162,7 +181,6 @@ namespace AreaTargetPlugin
             // All validations passed
             Manifest = manifest;
             MeshPath = meshPath;
-            TexturePath = texturePath;
             FeatureDbPath = featureDbPath;
 
             Debug.Log($"[AreaTargetPlugin] Asset bundle loaded: {manifest.name} v{manifest.version} " +

@@ -117,6 +117,7 @@ class ModelOptimizerClient:
         self,
         task_id: str,
         poll_interval: float = 2.0,
+        timeout: float = 1800.0,
     ) -> str:
         """Poll until the task reaches a terminal status.
 
@@ -127,11 +128,22 @@ class ModelOptimizerClient:
         Args:
             task_id: The task identifier.
             poll_interval: Seconds to wait between status checks.
+            timeout: Maximum seconds to wait before raising ``TimeoutError``.
+                Defaults to 1800 (30 minutes).
 
         Returns:
             The terminal status string (``"completed"`` or ``"failed"``).
+
+        Raises:
+            TimeoutError: If the task does not reach a terminal status within
+                *timeout* seconds.
         """
+        start = time.monotonic()
         while True:
+            if time.monotonic() - start > timeout:
+                raise TimeoutError(
+                    f"Optimizer task {task_id} did not complete within {timeout}s"
+                )
             status = self.get_status(task_id)
             if status["status"] in ("completed", "failed"):
                 return status["status"]

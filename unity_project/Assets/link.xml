@@ -1,0 +1,6 @@
+<linker>
+  <assembly fullname="Microsoft.Data.Sqlite" preserve="all"/>
+  <assembly fullname="SQLitePCLRaw.core" preserve="all"/>
+  <assembly fullname="SQLitePCLRaw.batteries_v2" preserve="all"/>
+  <assembly fullname="SQLitePCLRaw.provider.e_sqlite3" preserve="all"/>
+</linker>

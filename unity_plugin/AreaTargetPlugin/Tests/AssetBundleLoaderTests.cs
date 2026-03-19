@@ -35,18 +35,17 @@ namespace AreaTargetPlugin.Tests
             Directory.CreateDirectory(dir);
 
             string manifest = @"{
-                ""version"": ""1.0"",
+                ""version"": ""2.0"",
                 ""name"": ""test_asset"",
-                ""meshFile"": ""mesh.obj"",
-                ""textureFile"": ""texture_atlas.png"",
+                ""meshFile"": ""optimized.glb"",
+                ""format"": ""glb"",
                 ""featureDbFile"": ""features.db"",
                 ""keyframeCount"": 10,
                 ""featureType"": ""ORB"",
                 ""createdAt"": ""2024-01-01T00:00:00Z""
             }";
             File.WriteAllText(Path.Combine(dir, "manifest.json"), manifest);
-            File.WriteAllText(Path.Combine(dir, "mesh.obj"), "# OBJ file");
-            File.WriteAllText(Path.Combine(dir, "texture_atlas.png"), "PNG_DATA");
+            File.WriteAllText(Path.Combine(dir, "optimized.glb"), "GLB_DATA");
             File.WriteAllText(Path.Combine(dir, "features.db"), "SQLITE_DB");
 
             return dir;
@@ -75,10 +74,10 @@ namespace AreaTargetPlugin.Tests
             _loader.Load(assetDir);
 
             Assert.IsNotNull(_loader.Manifest);
-            Assert.AreEqual("1.0", _loader.Manifest.version);
+            Assert.AreEqual("2.0", _loader.Manifest.version);
             Assert.AreEqual("test_asset", _loader.Manifest.name);
-            Assert.AreEqual("mesh.obj", _loader.Manifest.meshFile);
-            Assert.AreEqual("texture_atlas.png", _loader.Manifest.textureFile);
+            Assert.AreEqual("optimized.glb", _loader.Manifest.meshFile);
+            Assert.AreEqual("glb", _loader.Manifest.format);
             Assert.AreEqual("features.db", _loader.Manifest.featureDbFile);
             Assert.AreEqual(10, _loader.Manifest.keyframeCount);
             Assert.AreEqual("ORB", _loader.Manifest.featureType);
@@ -92,10 +91,8 @@ namespace AreaTargetPlugin.Tests
             _loader.Load(assetDir);
 
             Assert.IsNotNull(_loader.MeshPath);
-            Assert.IsNotNull(_loader.TexturePath);
             Assert.IsNotNull(_loader.FeatureDbPath);
             Assert.IsTrue(File.Exists(_loader.MeshPath));
-            Assert.IsTrue(File.Exists(_loader.TexturePath));
             Assert.IsTrue(File.Exists(_loader.FeatureDbPath));
         }
 
@@ -175,8 +172,8 @@ namespace AreaTargetPlugin.Tests
             Directory.CreateDirectory(dir);
             string manifest = @"{
                 ""name"": ""test"",
-                ""meshFile"": ""mesh.obj"",
-                ""textureFile"": ""texture_atlas.png"",
+                ""meshFile"": ""optimized.glb"",
+                ""format"": ""glb"",
                 ""featureDbFile"": ""features.db""
             }";
             File.WriteAllText(Path.Combine(dir, "manifest.json"), manifest);
@@ -193,15 +190,14 @@ namespace AreaTargetPlugin.Tests
             string dir = Path.Combine(_testDir, "bad_version");
             Directory.CreateDirectory(dir);
             string manifest = @"{
-                ""version"": ""2.0"",
+                ""version"": ""1.0"",
                 ""name"": ""test"",
                 ""meshFile"": ""mesh.obj"",
-                ""textureFile"": ""texture_atlas.png"",
+                ""format"": ""glb"",
                 ""featureDbFile"": ""features.db""
             }";
             File.WriteAllText(Path.Combine(dir, "manifest.json"), manifest);
             File.WriteAllText(Path.Combine(dir, "mesh.obj"), "data");
-            File.WriteAllText(Path.Combine(dir, "texture_atlas.png"), "data");
             File.WriteAllText(Path.Combine(dir, "features.db"), "data");
 
             bool result = _loader.Load(dir);
@@ -220,15 +216,14 @@ namespace AreaTargetPlugin.Tests
             string dir = Path.Combine(_testDir, "no_mesh");
             Directory.CreateDirectory(dir);
             string manifest = @"{
-                ""version"": ""1.0"",
+                ""version"": ""2.0"",
                 ""name"": ""test"",
-                ""meshFile"": ""mesh.obj"",
-                ""textureFile"": ""texture_atlas.png"",
+                ""meshFile"": ""optimized.glb"",
+                ""format"": ""glb"",
                 ""featureDbFile"": ""features.db""
             }";
             File.WriteAllText(Path.Combine(dir, "manifest.json"), manifest);
-            // mesh.obj intentionally missing
-            File.WriteAllText(Path.Combine(dir, "texture_atlas.png"), "data");
+            // optimized.glb intentionally missing
             File.WriteAllText(Path.Combine(dir, "features.db"), "data");
 
             bool result = _loader.Load(dir);
@@ -238,43 +233,19 @@ namespace AreaTargetPlugin.Tests
         }
 
         [Test]
-        public void Load_MissingTextureFile_ReturnsFalse()
-        {
-            string dir = Path.Combine(_testDir, "no_texture");
-            Directory.CreateDirectory(dir);
-            string manifest = @"{
-                ""version"": ""1.0"",
-                ""name"": ""test"",
-                ""meshFile"": ""mesh.obj"",
-                ""textureFile"": ""texture_atlas.png"",
-                ""featureDbFile"": ""features.db""
-            }";
-            File.WriteAllText(Path.Combine(dir, "manifest.json"), manifest);
-            File.WriteAllText(Path.Combine(dir, "mesh.obj"), "data");
-            // texture_atlas.png intentionally missing
-            File.WriteAllText(Path.Combine(dir, "features.db"), "data");
-
-            bool result = _loader.Load(dir);
-
-            Assert.IsFalse(result);
-            StringAssert.Contains("Texture file not found", _loader.LastError);
-        }
-
-        [Test]
         public void Load_MissingFeatureDb_ReturnsFalse()
         {
             string dir = Path.Combine(_testDir, "no_features");
             Directory.CreateDirectory(dir);
             string manifest = @"{
-                ""version"": ""1.0"",
+                ""version"": ""2.0"",
                 ""name"": ""test"",
-                ""meshFile"": ""mesh.obj"",
-                ""textureFile"": ""texture_atlas.png"",
+                ""meshFile"": ""optimized.glb"",
+                ""format"": ""glb"",
                 ""featureDbFile"": ""features.db""
             }";
             File.WriteAllText(Path.Combine(dir, "manifest.json"), manifest);
-            File.WriteAllText(Path.Combine(dir, "mesh.obj"), "data");
-            File.WriteAllText(Path.Combine(dir, "texture_atlas.png"), "data");
+            File.WriteAllText(Path.Combine(dir, "optimized.glb"), "data");
             // features.db intentionally missing
 
             bool result = _loader.Load(dir);
@@ -293,9 +264,9 @@ namespace AreaTargetPlugin.Tests
             string dir = Path.Combine(_testDir, "no_mesh_field");
             Directory.CreateDirectory(dir);
             string manifest = @"{
-                ""version"": ""1.0"",
+                ""version"": ""2.0"",
                 ""name"": ""test"",
-                ""textureFile"": ""texture_atlas.png"",
+                ""format"": ""glb"",
                 ""featureDbFile"": ""features.db""
             }";
             File.WriteAllText(Path.Combine(dir, "manifest.json"), manifest);
@@ -307,34 +278,15 @@ namespace AreaTargetPlugin.Tests
         }
 
         [Test]
-        public void Load_ManifestMissingTextureFile_ReturnsFalse()
-        {
-            string dir = Path.Combine(_testDir, "no_texture_field");
-            Directory.CreateDirectory(dir);
-            string manifest = @"{
-                ""version"": ""1.0"",
-                ""name"": ""test"",
-                ""meshFile"": ""mesh.obj"",
-                ""featureDbFile"": ""features.db""
-            }";
-            File.WriteAllText(Path.Combine(dir, "manifest.json"), manifest);
-
-            bool result = _loader.Load(dir);
-
-            Assert.IsFalse(result);
-            StringAssert.Contains("textureFile", _loader.LastError);
-        }
-
-        [Test]
         public void Load_ManifestMissingFeatureDbFile_ReturnsFalse()
         {
             string dir = Path.Combine(_testDir, "no_featuredb_field");
             Directory.CreateDirectory(dir);
             string manifest = @"{
-                ""version"": ""1.0"",
+                ""version"": ""2.0"",
                 ""name"": ""test"",
-                ""meshFile"": ""mesh.obj"",
-                ""textureFile"": ""texture_atlas.png""
+                ""meshFile"": ""optimized.glb"",
+                ""format"": ""glb""
             }";
             File.WriteAllText(Path.Combine(dir, "manifest.json"), manifest);
 

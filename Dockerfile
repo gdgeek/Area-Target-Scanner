@@ -12,8 +12,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY processing_pipeline/ /app/processing_pipeline/
 COPY web_service/ /app/web_service/
 
+RUN useradd --create-home --shell /bin/bash appuser \
+    && mkdir -p /tmp/pipeline_uploads /tmp/pipeline_outputs \
+    && chown appuser:appuser /tmp/pipeline_uploads /tmp/pipeline_outputs
+
 ENV PYTHONPATH=/app
 
 EXPOSE 5000
+
+USER appuser
 
 CMD ["python", "web_service/app.py"]

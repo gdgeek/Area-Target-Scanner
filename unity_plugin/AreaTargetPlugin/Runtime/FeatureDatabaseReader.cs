@@ -1,9 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Data;
 using System.IO;
 using UnityEngine;
-using Mono.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 
 namespace AreaTargetPlugin
 {
@@ -26,7 +25,7 @@ namespace AreaTargetPlugin
     public class VocabularyWord
     {
         public int WordId;
-        public float[] Descriptor;
+        public byte[] Descriptor;
         public float IdfWeight;
     }
 
@@ -58,7 +57,7 @@ namespace AreaTargetPlugin
             _keyframes = new List<KeyframeRecord>();
             _vocabulary = new List<VocabularyWord>();
 
-            string connectionString = $"URI=file:{dbPath}";
+            string connectionString = $"Data Source={dbPath}";
             try
             {
                 using (var conn = new SqliteConnection(connectionString))
@@ -78,9 +77,10 @@ namespace AreaTargetPlugin
 
         private void LoadKeyframes(SqliteConnection conn)
         {
-            // Load keyframe records
+            // 1. Load all keyframe records into a dictionary keyed by id
             var kfCmd = conn.CreateCommand();
             kfCmd.CommandText = "SELECT id, pose, global_descriptor FROM keyframes ORDER BY id";
+            var kfMap = new Dictionary<int, KeyframeRecord>();
             using (var reader = kfCmd.ExecuteReader())
             {
                 while (reader.Read())
@@ -113,26 +113,26 @@ namespace AreaTargetPlugin
                         }
                     }
 
+                    kfMap[kf.Id] = kf;
                     _keyframes.Add(kf);
                 }
             }
 
-            // Load features for each keyframe
-            foreach (var kf in _keyframes)
+            // 2. Load all features in a single query, group by keyframe_id in memory
+            var featCmd = conn.CreateCommand();
+            featCmd.CommandText = "SELECT keyframe_id, x, y, x3d, y3d, z3d, descriptor FROM features ORDER BY keyframe_id, id";
+            using (var reader = featCmd.ExecuteReader())
             {
-                var featCmd = conn.CreateCommand();
-                featCmd.CommandText = "SELECT x, y, x3d, y3d, z3d, descriptor FROM features WHERE keyframe_id = @kfId ORDER BY id";
-                featCmd.Parameters.AddWithValue("@kfId", kf.Id);
-
-                using (var reader = featCmd.ExecuteReader())
+                while (reader.Read())
                 {
-                    while (reader.Read())
+                    int kfId = reader.GetInt32(0);
+                    if (kfMap.TryGetValue(kfId, out var kf))
                     {
-                        float x = (float)reader.GetDouble(0);
-                        float y = (float)reader.GetDouble(1);
-                        float x3d = (float)reader.GetDouble(2);
-                        float y3d = (float)reader.GetDouble(3);
-                        float z3d = (float)reader.GetDouble(4);
+                        float x = (float)reader.GetDouble(1);
+                        float y = (float)reader.GetDouble(2);
+                        float x3d = (float)reader.GetDouble(3);
+                        float y3d = (float)reader.GetDouble(4);
+                        float z3d = (float)reader.GetDouble(5);
                         byte[] desc = (byte[])reader["descriptor"];
 
                         kf.Keypoints2D.Add(new Vector2(x, y));
@@ -158,12 +158,7 @@ namespace AreaTargetPlugin
                     };
 
                     byte[] descBlob = (byte[])reader["descriptor"];
-                    int descLen = descBlob.Length / 8;
-                    word.Descriptor = new float[descLen];
-                    for (int i = 0; i < descLen; i++)
-                    {
-                        word.Descriptor[i] = (float)BitConverter.ToDouble(descBlob, i * 8);
-                    }
+                    word.Descriptor = descBlob;
 
                     _vocabulary.Add(word);
                 }

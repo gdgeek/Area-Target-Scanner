@@ -384,7 +384,7 @@ class TestMultiMeshMerge:
         extents: list[tuple[float, float, float]],
     ):
         """When a GLB contains multiple meshes (trimesh.Scene), merging via
-        scene.dump(concatenate=True) produces a single mesh whose vertex count
+        scene.to_geometry() produces a single mesh whose vertex count
         equals the sum of all sub-mesh vertex counts.
 
         **Validates: Requirements 3.2**
@@ -421,7 +421,7 @@ class TestMultiMeshMerge:
             loaded_total = sum(len(g.vertices) for g in loaded_geoms)
 
             # Merge all meshes (same logic as pipeline)
-            merged = loaded.dump(concatenate=True)
+            merged = loaded.to_geometry()
 
             # Merged mesh should be a single Trimesh
             assert isinstance(merged, trimesh.Trimesh), (
@@ -510,9 +510,14 @@ class TestFeatureDatabaseNonEmpty:
                 "height": 480,
             }
 
-            # 4. Call build_feature_database
+            # 4. Load mesh and call build_feature_database
+            scene = trimesh.load(glb_path)
+            if isinstance(scene, trimesh.Scene):
+                mesh_tri = scene.to_geometry()
+            else:
+                mesh_tri = scene
             features = pipeline.build_feature_database(
-                glb_path, images, intrinsics
+                mesh_tri, images, intrinsics
             )
 
             # 5. Assert non-empty FeatureDatabase
@@ -590,9 +595,11 @@ class TestAssetBundleFileCompleteness:
             # 2. Create a synthetic FeatureDatabase
             features = _make_feature_database(n_keyframes)
 
-            # 3. Export asset bundle
+            # 3. Load mesh and export asset bundle
+            scene = trimesh.load(glb_path)
+            mesh_tri = scene.to_geometry() if isinstance(scene, trimesh.Scene) else scene
             output_dir = os.path.join(td, "output")
-            pipeline.export_asset_bundle(glb_path, features, output_dir)
+            pipeline.export_asset_bundle(glb_path, mesh_tri, features, output_dir)
 
             # 4. Assert output directory contains exactly the 3 expected files
             actual_files = set(os.listdir(output_dir))
@@ -655,9 +662,11 @@ class TestGLBCopyFidelity:
             # 3. Create a minimal FeatureDatabase (empty keyframes is fine)
             features = _make_feature_database(0)
 
-            # 4. Call export_asset_bundle
+            # 4. Load mesh and call export_asset_bundle
+            scene = trimesh.load(glb_path)
+            mesh_tri = scene.to_geometry() if isinstance(scene, trimesh.Scene) else scene
             output_dir = os.path.join(td, "output")
-            pipeline.export_asset_bundle(glb_path, features, output_dir)
+            pipeline.export_asset_bundle(glb_path, mesh_tri, features, output_dir)
 
             # 5. Read the copied GLB bytes
             copied_path = os.path.join(output_dir, "optimized.glb")
@@ -879,9 +888,11 @@ class TestManifestCompletenessAndReferenceConsistency:
             # 2. Create a FeatureDatabase with the generated keyframes
             features = _make_feature_database(n_keyframes)
 
-            # 3. Call export_asset_bundle
+            # 3. Load mesh and call export_asset_bundle
+            scene = trimesh.load(glb_path)
+            mesh_tri = scene.to_geometry() if isinstance(scene, trimesh.Scene) else scene
             output_dir = os.path.join(td, "output")
-            pipeline.export_asset_bundle(glb_path, features, output_dir)
+            pipeline.export_asset_bundle(glb_path, mesh_tri, features, output_dir)
 
             # 4. Load manifest.json
             manifest_path = os.path.join(output_dir, "manifest.json")
@@ -972,16 +983,16 @@ class TestManifestBoundsAccuracy:
             # 2. Compute expected AABB from the mesh vertices
             mesh = trimesh.load(glb_path)
             if isinstance(mesh, trimesh.Scene):
-                mesh = mesh.dump(concatenate=True)
+                mesh = mesh.to_geometry()
             expected_min = mesh.bounds[0].tolist()
             expected_max = mesh.bounds[1].tolist()
 
             # 3. Create a minimal FeatureDatabase
             features = _make_feature_database(0)
 
-            # 4. Call export_asset_bundle
+            # 4. Call export_asset_bundle with mesh object
             output_dir = os.path.join(td, "output")
-            pipeline.export_asset_bundle(glb_path, features, output_dir)
+            pipeline.export_asset_bundle(glb_path, mesh, features, output_dir)
 
             # 5. Load manifest.json
             manifest_path = os.path.join(output_dir, "manifest.json")
@@ -1056,6 +1067,8 @@ class TestPipelineFaultPropagation:
 
         **Validates: Requirements 5.3**
         """
+        import trimesh
+
         pipeline = OptimizedPipeline()
 
         scan_dir = "/fake/scan"
@@ -1081,6 +1094,19 @@ class TestPipelineFaultPropagation:
             # Steps after the failing step are left as default mocks
             # (we'll assert they were NOT called)
 
+        # When the failing step is build_feature_database or export_asset_bundle
+        # (index >= 2), run() calls trimesh.load(glb_path) between optimize_model
+        # and build_feature_database. We need to mock trimesh.load so it doesn't
+        # fail on the fake path returned by the mocked optimize_model.
+        trimesh_patch = None
+        if failing_step_idx >= 2:
+            mock_mesh = trimesh.creation.box(extents=[1.0, 1.0, 1.0])
+            trimesh_patch = patch(
+                "trimesh.load",
+                return_value=mock_mesh,
+            )
+            trimesh_patch.start()
+
         try:
             # run() should propagate the RuntimeError
             import pytest
@@ -1099,3 +1125,5 @@ class TestPipelineFaultPropagation:
             # Stop all patches
             for p in patches.values():
                 p.stop()
+            if trimesh_patch is not None:
+                trimesh_patch.stop()

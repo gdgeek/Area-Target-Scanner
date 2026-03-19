@@ -27,6 +27,11 @@ def main() -> None:
         action="store_true",
         help="Enable verbose logging.",
     )
+    parser.add_argument(
+        "--optimizer-url",
+        default="http://localhost:3000",
+        help="Base URL of the 3D-Model-Optimizer service (default: http://localhost:3000).",
+    )
 
     args = parser.parse_args()
 
@@ -35,9 +40,9 @@ def main() -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    from processing_pipeline.pipeline import ReconstructionPipeline
+    from processing_pipeline.optimized_pipeline import OptimizedPipeline
 
-    pipeline = ReconstructionPipeline()
+    pipeline = OptimizedPipeline(optimizer_url=args.optimizer_url)
     pipeline.run(args.input, args.output)
 
 
