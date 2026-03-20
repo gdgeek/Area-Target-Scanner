@@ -2,7 +2,8 @@
   "name": "AreaTargetPlugin.Tests.Property",
   "rootNamespace": "AreaTargetPlugin.Tests",
   "references": [
-    "AreaTargetPlugin.Runtime"
+    "AreaTargetPlugin.Runtime",
+    "AreaTargetTest"
   ],
   "includePlatforms": [
     "Editor"
