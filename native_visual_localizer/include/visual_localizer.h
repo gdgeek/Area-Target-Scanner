@@ -26,6 +26,17 @@ typedef struct {
     int matched_features;
 } VLResult;
 
+/* Debug diagnostics for pipeline troubleshooting */
+typedef struct {
+    int orb_keypoints;       /* ORB keypoints detected in current frame */
+    int candidate_keyframes; /* Number of candidate keyframes selected */
+    int best_kf_id;          /* ID of best matching keyframe (-1 if none) */
+    int best_raw_matches;    /* Raw KNN matches before Lowe ratio filter */
+    int best_good_matches;   /* Good matches after Lowe ratio filter */
+    int best_inliers;        /* PnP RANSAC inlier count */
+    float best_bow_sim;      /* Best BoW similarity score */
+} VLDebugInfo;
+
 /* Lifecycle */
 VL_API VLHandle vl_create(void);
 VL_API void     vl_destroy(VLHandle handle);
@@ -47,8 +58,19 @@ VL_API VLResult vl_process_frame(VLHandle handle,
                                   float fx, float fy, float cx, float cy,
                                   int has_last_pose, const float* last_pose_4x4);
 
+/* Frame processing — out-parameter version (avoids struct-return ABI issues on iOS ARM64) */
+VL_API void vl_process_frame_out(VLHandle handle,
+                                  const unsigned char* image_data,
+                                  int width, int height,
+                                  float fx, float fy, float cx, float cy,
+                                  int has_last_pose, const float* last_pose_4x4,
+                                  VLResult* out_result);
+
 /* State management */
 VL_API void vl_reset(VLHandle handle);
+
+/* Debug diagnostics — writes last frame's pipeline stats to out_info */
+VL_API void vl_get_debug_info(VLHandle handle, VLDebugInfo* out_info);
 
 #ifdef __cplusplus
 }

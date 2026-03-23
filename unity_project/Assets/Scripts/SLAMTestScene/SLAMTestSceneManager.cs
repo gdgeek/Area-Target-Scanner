@@ -3,11 +3,14 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 using AreaTargetPlugin;
+using GLTFast;
 
 public class SLAMTestSceneManager : MonoBehaviour
 {
@@ -32,6 +35,9 @@ public class SLAMTestSceneManager : MonoBehaviour
     private AssetBundleLoader _loader;
     private AreaTargetPlugin.TrackingState _previousState;
     private GameObject _originCube;
+    private GameObject _glbModelObj;   // GLB 模型 GameObject (glTFast)
+    private GltfImport _gltfImport;    // glTFast import handle
+    private bool _glbLoaded;
     private bool _initialized;
 
     private float _fpsTimer;
@@ -39,10 +45,41 @@ public class SLAMTestSceneManager : MonoBehaviour
     private int _totalFramesProcessed;
     private int _framesWithImage;
     private int _framesNoImage;
+    private int _framesSkipped;
     private string _lastTrackingDetail = "";
     private float _lastIntrinsicsFx;
     private int _lastImageW, _lastImageH;
     private int _lastGrayscaleNonZero;
+
+    // --- 后台线程定位 ---
+    private Thread _locThread;
+    private volatile bool _locThreadRunning;
+    // 主线程写入，后台线程读取
+    private CameraFrame _pendingFrame;
+    private volatile bool _hasPendingFrame;
+    // 后台线程写入，主线程读取
+    private TrackingResult _latestResult;
+    private volatile bool _hasNewResult;
+    private readonly object _frameLock = new object();
+    private readonly object _resultLock = new object();
+
+    // AR 相机 pose（主线程在帧回调中捕获，与图像同步）
+    private Matrix4x4 _arCameraPoseForResult = Matrix4x4.identity;
+    private Matrix4x4 _pendingArCameraPose = Matrix4x4.identity;
+
+    // --- 原点稳定性验证 ---
+    private Vector3 _lastOriginPos;
+    private bool _hasLastOriginPos;
+    private int _originSampleCount;
+    private Vector3 _originSum;       // 累计位置之和
+    private Vector3 _originSumSq;     // 累计位置平方之和
+    private float _maxFrameDrift;     // 最大帧间位移
+    private string _stabilityInfo = "";
+
+    // --- 增强调试信息（显示在屏幕上） ---
+    private string _poseDebugInfo = "";
+    private string _glbDebugInfo = "";
+    private string _scanToARDebugInfo = "";
 
     void Start()
     {
@@ -244,6 +281,22 @@ public class SLAMTestSceneManager : MonoBehaviour
         _initialized = true;
         _previousState = AreaTargetPlugin.TrackingState.INITIALIZING;
         log.Add("初始化完成!");
+
+        // 加载 GLB 模型用于 AR 可视化 (glTFast 异步加载)
+        if (_loader.MeshPath != null && _loader.MeshPath.EndsWith(".glb"))
+        {
+            log.Add($"GLB路径: {_loader.MeshPath}");
+            _ = LoadGLBModelAsync(_loader.MeshPath);
+        }
+
+        // 启动后台定位线程
+        _locThreadRunning = true;
+        _locThread = new Thread(LocalizationThreadWorker);
+        _locThread.Name = "VL_Localizer";
+        _locThread.IsBackground = true;
+        _locThread.Start();
+        log.Add("定位线程: 已启动");
+
         debugPanel?.SetStatus(string.Join("\n", log), Color.green);
     }
 
@@ -295,52 +348,359 @@ public class SLAMTestSceneManager : MonoBehaviour
             Intrinsics = intrinsics
         };
 
-        try
+        // 提交帧到后台线程（如果后台空闲则替换，否则跳过）
+        lock (_frameLock)
         {
-            TrackingResult result = _tracker.ProcessFrame(frame);
-            _lastTrackingDetail = $"S={result.State} M={result.MatchedFeatures} C={result.Confidence:F3}";
-            HandleTrackingResult(result);
-        }
-        catch (Exception ex)
-        {
-            _lastTrackingDetail = $"异常:{ex.GetType().Name}:{ex.Message}";
+            _pendingFrame = frame;
+            _pendingArCameraPose = Camera.main != null
+                ? Camera.main.transform.localToWorldMatrix
+                : Matrix4x4.identity;
+            _hasPendingFrame = true;
         }
     }
 
-    private void HandleTrackingResult(TrackingResult result)
+    /// <summary>
+    /// 后台定位线程：循环等待新帧，执行 ProcessFrame，写入结果。
+    /// </summary>
+    private void LocalizationThreadWorker()
+    {
+        while (_locThreadRunning)
+        {
+            CameraFrame frame;
+            bool hasFrame;
+            Matrix4x4 arCamPose;
+
+            lock (_frameLock)
+            {
+                hasFrame = _hasPendingFrame;
+                frame = _pendingFrame;
+                arCamPose = _pendingArCameraPose;
+                _hasPendingFrame = false;
+            }
+
+            if (!hasFrame)
+            {
+                Thread.Sleep(2); // 避免空转
+                continue;
+            }
+
+            try
+            {
+                TrackingResult result = _tracker.ProcessFrame(frame);
+
+                // 读取 debug info（反射，线程安全因为 native 侧是同步的）
+                string detail = $"S={result.State} M={result.MatchedFeatures} C={result.Confidence:F3}";
+                try
+                {
+                    var getDbgMethod = _tracker.GetType().GetMethod("GetDebugInfo",
+                        BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                    if (getDbgMethod != null)
+                    {
+                        var dbgObj = getDbgMethod.Invoke(_tracker, null);
+                        var dbgType = dbgObj.GetType();
+                        int orbKp = (int)dbgType.GetField("orb_keypoints").GetValue(dbgObj);
+                        int candKf = (int)dbgType.GetField("candidate_keyframes").GetValue(dbgObj);
+                        int bestKfId = (int)dbgType.GetField("best_kf_id").GetValue(dbgObj);
+                        int bestRaw = (int)dbgType.GetField("best_raw_matches").GetValue(dbgObj);
+                        int bestGood = (int)dbgType.GetField("best_good_matches").GetValue(dbgObj);
+                        int bestInliers = (int)dbgType.GetField("best_inliers").GetValue(dbgObj);
+                        float bestBow = (float)dbgType.GetField("best_bow_sim").GetValue(dbgObj);
+
+                        if (orbKp > 0 || candKf > 0 || bestKfId >= 0)
+                        {
+                            detail += $"\nORB:{orbKp} Cand:{candKf} BoW:{bestBow:F3}" +
+                                $"\nRaw:{bestRaw} Good:{bestGood} In:{bestInliers} KF:{bestKfId}";
+                        }
+                    }
+                }
+                catch { /* debug info is optional */ }
+
+                lock (_resultLock)
+                {
+                    _latestResult = result;
+                    _arCameraPoseForResult = arCamPose;
+                    _lastTrackingDetail = detail;
+                    _hasNewResult = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                lock (_resultLock)
+                {
+                    _lastTrackingDetail = $"异常:{ex.GetType().Name}:{ex.Message}";
+                    _hasNewResult = true;
+                }
+            }
+        }
+    }
+
+    private void HandleTrackingResult(TrackingResult result, Matrix4x4 arCameraPose)
     {
         bool toTracking = result.State == AreaTargetPlugin.TrackingState.TRACKING
             && _previousState != AreaTargetPlugin.TrackingState.TRACKING;
         bool toLost = result.State == AreaTargetPlugin.TrackingState.LOST
             && _previousState == AreaTargetPlugin.TrackingState.TRACKING;
 
+        // 首次识别到：播放音效，创建原点标记 + GLB 模型
         if (toTracking)
         {
             audioFeedback?.PlayTrackingFound();
             if (_originCube == null) _originCube = CreateOriginCube();
-            _originCube.SetActive(true);
         }
+
+        // 跟踪中：计算扫描坐标系原点在 AR 世界中的位置
+        // result.Pose = ARKit world-to-camera [R|t] (修复后的 flip*R, flip*t)
+        // 扫描原点 (0,0,0) → 相机坐标 = R*(0,0,0)+t = t
+        // arCameraPose (camera-to-world) 把相机坐标变换到 AR 世界
+        if (result.State == AreaTargetPlugin.TrackingState.TRACKING && _originCube != null)
+        {
+            Matrix4x4 p = result.Pose;
+
+            // 验证旋转矩阵行列式 (应该接近 1.0)
+            float detR = p.m00 * (p.m11 * p.m22 - p.m12 * p.m21)
+                       - p.m01 * (p.m10 * p.m22 - p.m12 * p.m20)
+                       + p.m02 * (p.m10 * p.m21 - p.m11 * p.m20);
+
+            Debug.Log($"[POSE] det(R)={detR:F4} t=({p.m03:F4},{p.m13:F4},{p.m23:F4})");
+            Debug.Log($"[POSE] R=[{p.m00:F3},{p.m01:F3},{p.m02:F3}|{p.m10:F3},{p.m11:F3},{p.m12:F3}|{p.m20:F3},{p.m21:F3},{p.m22:F3}]");
+            Debug.Log($"[AR_CAM] pos=({arCameraPose.m03:F3},{arCameraPose.m13:F3},{arCameraPose.m23:F3})");
+
+            _poseDebugInfo = $"w2c t=({p.m03:F2},{p.m13:F2},{p.m23:F2}) det={detR:F3}\n" +
+                             $"arCam=({arCameraPose.m03:F2},{arCameraPose.m13:F2},{arCameraPose.m23:F2})";
+
+            // 扫描原点在相机坐标系中的位置
+            Vector3 scanOriginInCam = new Vector3(p.m03, p.m13, p.m23);
+
+            // 变换到 AR 世界坐标
+            Vector3 scanOriginInAR = arCameraPose.MultiplyPoint3x4(scanOriginInCam);
+
+            // scanToAR: 把扫描坐标系的任意点变换到 AR 世界
+            Matrix4x4 scanToAR = arCameraPose * result.Pose;
+
+            // 验证 scanToAR 的行列式
+            float detScanToAR = scanToAR.m00 * (scanToAR.m11 * scanToAR.m22 - scanToAR.m12 * scanToAR.m21)
+                              - scanToAR.m01 * (scanToAR.m10 * scanToAR.m22 - scanToAR.m12 * scanToAR.m20)
+                              + scanToAR.m02 * (scanToAR.m10 * scanToAR.m21 - scanToAR.m11 * scanToAR.m20);
+
+            // scanToAR 与 identity 的差异
+            float s2aErrT = new Vector3(scanToAR.m03, scanToAR.m13, scanToAR.m23).magnitude;
+            float s2aErrR = Mathf.Abs(scanToAR.m00 - 1) + Mathf.Abs(scanToAR.m11 - 1) + Mathf.Abs(scanToAR.m22 - 1);
+
+            _scanToARDebugInfo = $"s2a t=({scanToAR.m03:F3},{scanToAR.m13:F3},{scanToAR.m23:F3})\n" +
+                                 $"s2a diag=({scanToAR.m00:F3},{scanToAR.m11:F3},{scanToAR.m22:F3})\n" +
+                                 $"s2a |t|={s2aErrT:F3} Rerr={s2aErrR:F3} det={detScanToAR:F3}";
+
+            Debug.Log($"[ORIGIN] inCam=({scanOriginInCam.x:F3},{scanOriginInCam.y:F3},{scanOriginInCam.z:F3}) " +
+                      $"inAR=({scanOriginInAR.x:F3},{scanOriginInAR.y:F3},{scanOriginInAR.z:F3}) " +
+                      $"det(scanToAR)={detScanToAR:F3}");
+            Debug.Log($"[S2A] |t|={s2aErrT:F4} Rerr={s2aErrR:F4}");
+
+            Quaternion scanRotInAR = scanToAR.rotation;
+
+            // 更新原点 cube
+            _originCube.transform.SetPositionAndRotation(scanOriginInAR, scanRotInAR);
+            _originCube.SetActive(true);
+            SetCubeColor(Color.green);
+
+            // 更新 GLB 模型位置 — 用完整的 scanToAR 变换矩阵
+            // GLB 模型顶点在扫描世界坐标系中，scanToAR 把它们变换到 AR 世界
+            if (_glbModelObj != null)
+            {
+                // 直接用 scanToAR 矩阵设置模型的 transform
+                // 提取 position, rotation, scale
+                Vector3 pos = new Vector3(scanToAR.m03, scanToAR.m13, scanToAR.m23);
+                Quaternion rot = scanToAR.rotation;
+                Vector3 scale = new Vector3(
+                    new Vector3(scanToAR.m00, scanToAR.m10, scanToAR.m20).magnitude,
+                    new Vector3(scanToAR.m01, scanToAR.m11, scanToAR.m21).magnitude,
+                    new Vector3(scanToAR.m02, scanToAR.m12, scanToAR.m22).magnitude);
+
+                _glbModelObj.transform.SetPositionAndRotation(pos, rot);
+                _glbModelObj.transform.localScale = scale;
+                _glbModelObj.SetActive(true);
+
+                // 诊断: 模型世界空间 bounds
+                var renderers = _glbModelObj.GetComponentsInChildren<Renderer>();
+                string boundsInfo = "";
+                if (renderers.Length > 0)
+                {
+                    Bounds combinedBounds = renderers[0].bounds;
+                    for (int i = 1; i < renderers.Length; i++)
+                        combinedBounds.Encapsulate(renderers[i].bounds);
+                    Vector3 modelCenterWorld = combinedBounds.center;
+                    float distToCam = Vector3.Distance(modelCenterWorld, Camera.main?.transform.position ?? Vector3.zero);
+                    boundsInfo = $"center=({modelCenterWorld.x:F1},{modelCenterWorld.y:F1},{modelCenterWorld.z:F1}) d={distToCam:F1}m";
+                    Debug.Log($"[GLB] {boundsInfo} size={combinedBounds.size}");
+                }
+
+                _glbDebugInfo = $"GLB pos=({pos.x:F2},{pos.y:F2},{pos.z:F2}) sc=({scale.x:F2},{scale.y:F2},{scale.z:F2})\n{boundsInfo}";
+
+                Debug.Log($"[GLB] scanToAR pos=({pos.x:F3},{pos.y:F3},{pos.z:F3}) scale=({scale.x:F3},{scale.y:F3},{scale.z:F3})");
+                Debug.Log($"[GLB_DIAG] scanToAR row0=({scanToAR.m00:F3},{scanToAR.m01:F3},{scanToAR.m02:F3},{scanToAR.m03:F3})");
+                Debug.Log($"[GLB_DIAG] scanToAR row1=({scanToAR.m10:F3},{scanToAR.m11:F3},{scanToAR.m12:F3},{scanToAR.m13:F3})");
+                Debug.Log($"[GLB_DIAG] scanToAR row2=({scanToAR.m20:F3},{scanToAR.m21:F3},{scanToAR.m22:F3},{scanToAR.m23:F3})");
+            }
+
+            // 稳定性统计
+            float frameDrift = 0f;
+            if (_hasLastOriginPos)
+            {
+                frameDrift = Vector3.Distance(scanOriginInAR, _lastOriginPos);
+                if (frameDrift > _maxFrameDrift) _maxFrameDrift = frameDrift;
+            }
+            _lastOriginPos = scanOriginInAR;
+            _hasLastOriginPos = true;
+            _originSampleCount++;
+            _originSum += scanOriginInAR;
+            _originSumSq += new Vector3(
+                scanOriginInAR.x * scanOriginInAR.x,
+                scanOriginInAR.y * scanOriginInAR.y,
+                scanOriginInAR.z * scanOriginInAR.z);
+
+            Vector3 mean = _originSum / _originSampleCount;
+            Vector3 variance = _originSumSq / _originSampleCount - new Vector3(
+                mean.x * mean.x, mean.y * mean.y, mean.z * mean.z);
+            float stdDev = Mathf.Sqrt(Mathf.Max(0, variance.x) +
+                                       Mathf.Max(0, variance.y) +
+                                       Mathf.Max(0, variance.z));
+
+            _stabilityInfo = $"漂移:{frameDrift:F3}m 最大:{_maxFrameDrift:F3}m σ:{stdDev:F3}m N:{_originSampleCount}";
+            Debug.Log($"[STABILITY] {_stabilityInfo}");
+        }
+
+        // 丢失：播放音效，标记变红（保留在最后已知位置）
         if (toLost)
         {
             audioFeedback?.PlayTrackingLost();
-            if (_originCube != null) _originCube.SetActive(false);
+            SetCubeColor(Color.red);
         }
 
         _previousState = result.State;
     }
 
+    private void SetCubeColor(Color color)
+    {
+        if (_originCube == null) return;
+        var renderer = _originCube.GetComponent<Renderer>();
+        if (renderer != null)
+        {
+            renderer.material.color = color;
+        }
+    }
+
     private GameObject CreateOriginCube()
     {
         var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        cube.name = "OriginCube";
-        if (areaTargetOrigin != null) cube.transform.SetParent(areaTargetOrigin, false);
-        cube.transform.localPosition = Vector3.zero;
-        cube.transform.localScale = Vector3.one * 0.1f;
+        cube.name = "TrackingOriginCube";
+        cube.transform.localScale = Vector3.one * 0.1f; // 10cm
         return cube;
+    }
+
+    /// <summary>
+    /// 用 glTFast 异步加载 GLB 模型，创建半透明叠加层。
+    /// </summary>
+    private async Task LoadGLBModelAsync(string glbPath)
+    {
+        try
+        {
+            // iOS 上路径需要 file:// 前缀
+            string uri = glbPath;
+            if (!uri.StartsWith("file://"))
+                uri = "file://" + uri;
+
+            Debug.Log($"[GLB] Loading via glTFast: {uri}");
+
+            _gltfImport = new GltfImport();
+            bool success = await _gltfImport.Load(uri);
+
+            if (!success)
+            {
+                Debug.LogError("[GLB] glTFast load failed");
+                return;
+            }
+
+            // 创建容器 GameObject
+            _glbModelObj = new GameObject("GLBModel");
+            _glbModelObj.SetActive(false); // 等 tracking 时再显示
+
+            // 实例化场景到容器下
+            await _gltfImport.InstantiateMainSceneAsync(_glbModelObj.transform);
+
+            // === glTFast X 轴翻转修正 ===
+            // glTFast 自动做右手系→左手系转换（ConvertVector3FloatToFloatJob 中 x *= -1）
+            // 但我们的 GLB 顶点已经在 ARKit 世界坐标系中，不需要这个转换
+            // 验证数据：GLB 原始 X 范围 [-4.70, -0.46]，glTFast 翻转后变成 [0.46, 4.70]
+            // 用 localScale.x = -1 翻回来
+            foreach (Transform child in _glbModelObj.transform)
+            {
+                child.localScale = new Vector3(-1f, 1f, 1f);
+                Debug.Log($"[GLB_DIAG] X-flip applied to child='{child.name}'");
+            }
+
+            // 诊断: 输出 glTFast 创建的子节点层级
+            foreach (Transform child in _glbModelObj.transform)
+            {
+                Debug.Log($"[GLB_DIAG] child='{child.name}' localPos={child.localPosition} localRot={child.localEulerAngles} localScale={child.localScale}");
+            }
+
+            // 诊断: 输出每个 mesh 的本地空间 bounds 和顶点范围
+            var meshFilters = _glbModelObj.GetComponentsInChildren<MeshFilter>();
+            int totalVerts = 0, totalTris = 0;
+            foreach (var mf in meshFilters)
+            {
+                if (mf.sharedMesh != null)
+                {
+                    var m = mf.sharedMesh;
+                    totalVerts += m.vertexCount;
+                    totalTris += m.triangles.Length / 3;
+                    var b = m.bounds;
+                    Debug.Log($"[GLB_DIAG] mesh='{mf.gameObject.name}' verts={m.vertexCount} tris={m.triangles.Length / 3} bounds_center=({b.center.x:F3},{b.center.y:F3},{b.center.z:F3}) bounds_size=({b.size.x:F3},{b.size.y:F3},{b.size.z:F3})");
+
+                    // 输出前3个顶点的实际坐标（glTFast 翻转后的值）
+                    var verts = m.vertices;
+                    for (int i = 0; i < Mathf.Min(3, verts.Length); i++)
+                    {
+                        Debug.Log($"[GLB_DIAG] vert[{i}]=({verts[i].x:F4},{verts[i].y:F4},{verts[i].z:F4})");
+                    }
+                }
+            }
+
+            // 不替换材质 — 保持 glTFast 默认（品红色但可见），等位置确认正确后再处理
+            var renderers = _glbModelObj.GetComponentsInChildren<Renderer>();
+            foreach (var r in renderers)
+            {
+                foreach (var mat in r.materials)
+                {
+                    string shaderName = mat?.shader?.name ?? "NULL";
+                    Debug.Log($"[GLB_DIAG] renderer='{r.gameObject.name}' shader='{shaderName}'");
+                }
+            }
+
+            _glbLoaded = true;
+            Debug.Log($"[GLB_DIAG] Loaded: {totalVerts} verts, {totalTris} tris, {renderers.Length} renderers — X-flip applied, material unchanged");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[GLB] glTFast exception: {ex.Message}\n{ex.StackTrace}");
+        }
     }
 
     void Update()
     {
+        // 消费后台线程的定位结果
+        if (_hasNewResult)
+        {
+            TrackingResult result;
+            Matrix4x4 arCamPose;
+            lock (_resultLock)
+            {
+                result = _latestResult;
+                arCamPose = _arCameraPoseForResult;
+                _hasNewResult = false;
+            }
+            HandleTrackingResult(result, arCamPose);
+        }
+
         _fpsFrameCount++;
         _fpsTimer += Time.unscaledDeltaTime;
         if (_fpsTimer >= 1f)
@@ -351,28 +711,192 @@ public class SLAMTestSceneManager : MonoBehaviour
 
             if (_initialized)
             {
+                string detail;
+                lock (_resultLock) { detail = _lastTrackingDetail; }
+                string cubeInfo = _originCube != null && _originCube.activeSelf
+                    ? $"\n原点:{_originCube.transform.position.x:F2},{_originCube.transform.position.y:F2},{_originCube.transform.position.z:F2}"
+                    : "";
+                string glbInfo = _glbModelObj != null && _glbModelObj.activeSelf
+                    ? $"\nGLB:已加载" : (_glbLoaded ? "\nGLB:待显示" : "");
+                string stabilityLine = !string.IsNullOrEmpty(_stabilityInfo) ? $"\n{_stabilityInfo}" : "";
                 debugPanel?.SetDetailedTracking(
-                    $"帧:{_totalFramesProcessed} 图:{_framesWithImage} 无:{_framesNoImage}\n" +
+                    $"帧:{_totalFramesProcessed} 图:{_framesWithImage} 无:{_framesNoImage} 跳:{_framesSkipped}\n" +
                     $"图像:{_lastImageW}x{_lastImageH} nz:{_lastGrayscaleNonZero}/1000\n" +
-                    $"fx:{_lastIntrinsicsFx:F1} {_lastTrackingDetail}\n" +
-                    $"状态:{_previousState}");
+                    $"fx:{_lastIntrinsicsFx:F1} {detail}\n" +
+                    $"状态:{_previousState} [异步]{cubeInfo}{glbInfo}{stabilityLine}");
             }
         }
     }
 
     public void OnResetClicked()
     {
+        // 清空待处理帧，避免后台线程处理旧数据
+        lock (_frameLock) { _hasPendingFrame = false; }
         _tracker?.Reset();
+        lock (_resultLock) { _hasNewResult = false; }
         if (_originCube != null) _originCube.SetActive(false);
+        if (_glbModelObj != null) _glbModelObj.SetActive(false);
+        // 重置稳定性统计
+        _hasLastOriginPos = false;
+        _originSampleCount = 0;
+        _originSum = Vector3.zero;
+        _originSumSq = Vector3.zero;
+        _maxFrameDrift = 0f;
+        _stabilityInfo = "";
         debugPanel?.Clear();
         _previousState = AreaTargetPlugin.TrackingState.INITIALIZING;
+        Debug.Log("[RESET] Tracker and stats reset");
     }
 
     void OnDestroy()
     {
+        // 停止后台线程
+        _locThreadRunning = false;
+        if (_locThread != null && _locThread.IsAlive)
+        {
+            _locThread.Join(1000);
+        }
+        _locThread = null;
+
         if (arCameraManager != null) arCameraManager.frameReceived -= OnCameraFrameReceived;
         _tracker?.Dispose();
         _tracker = null;
+
+        if (_glbModelObj != null) Destroy(_glbModelObj);
+        _gltfImport?.Dispose();
+        _gltfImport = null;
+    }
+
+    // --- 屏幕箭头指示器 ---
+    private static Texture2D _arrowTex;
+
+    void OnGUI()
+    {
+        // === 调试 HUD：在屏幕右下角显示关键数值 ===
+        if (_previousState == AreaTargetPlugin.TrackingState.TRACKING)
+        {
+            float sw = Screen.width;
+            float sh = Screen.height;
+            var hudStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 20,
+                alignment = TextAnchor.LowerLeft
+            };
+            hudStyle.normal.textColor = Color.yellow;
+
+            // 背景半透明黑色
+            float hudW = 500f, hudH = 180f;
+            float hudX = 10f, hudY = sh - hudH - 10f;
+            GUI.color = new Color(0, 0, 0, 0.7f);
+            GUI.DrawTexture(new Rect(hudX, hudY, hudW, hudH), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            string hudText = "";
+            if (!string.IsNullOrEmpty(_poseDebugInfo))
+                hudText += _poseDebugInfo + "\n";
+            if (!string.IsNullOrEmpty(_scanToARDebugInfo))
+                hudText += _scanToARDebugInfo + "\n";
+            if (!string.IsNullOrEmpty(_glbDebugInfo))
+                hudText += _glbDebugInfo + "\n";
+            if (!string.IsNullOrEmpty(_stabilityInfo))
+                hudText += _stabilityInfo;
+
+            hudStyle.normal.textColor = Color.yellow;
+            GUI.Label(new Rect(hudX + 5, hudY + 5, hudW - 10, hudH - 10), hudText, hudStyle);
+        }
+
+        if (_originCube == null || !_originCube.activeSelf) return;
+        var cam = Camera.main;
+        if (cam == null) return;
+
+        Vector3 worldPos = _originCube.transform.position;
+        Vector3 vp = cam.WorldToViewportPoint(worldPos);
+
+        // vp.z < 0 表示在相机后面
+        bool behind = vp.z < 0;
+        bool onScreen = !behind && vp.x > 0.05f && vp.x < 0.95f && vp.y > 0.05f && vp.y < 0.95f;
+
+        float sw = Screen.width;
+        float sh = Screen.height;
+
+        if (_arrowTex == null)
+        {
+            _arrowTex = new Texture2D(1, 1);
+            _arrowTex.SetPixel(0, 0, Color.white);
+            _arrowTex.Apply();
+        }
+
+        Color arrowColor = _previousState == AreaTargetPlugin.TrackingState.TRACKING
+            ? Color.green : Color.red;
+
+        if (onScreen)
+        {
+            // 立方体在屏幕内：在它上方画一个向下的三角箭头
+            float sx = vp.x * sw;
+            float sy = (1f - vp.y) * sh; // GUI Y 轴反转
+            DrawArrowAt(sx, sy - 60f, 0f, 40f, arrowColor); // 箭头朝下，在立方体上方
+            // 距离标签
+            float dist = Vector3.Distance(cam.transform.position, worldPos);
+            var style = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 28,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter
+            };
+            style.normal.textColor = arrowColor;
+            GUI.Label(new Rect(sx - 80, sy - 100, 160, 36), $"{dist:F2}m", style);
+        }
+        else
+        {
+            // 立方体在屏幕外或后面：箭头贴在屏幕边缘
+            float cx = sw / 2f;
+            float cy = sh / 2f;
+
+            // 如果在后面，翻转方向
+            float dx = vp.x - 0.5f;
+            float dy = vp.y - 0.5f;
+            if (behind) { dx = -dx; dy = -dy; }
+
+            float angle = Mathf.Atan2(dy, dx);
+            float margin = 60f;
+
+            // 沿方向射线与屏幕边缘求交
+            float ex = cx + Mathf.Cos(angle) * sw;
+            float ey = cy - Mathf.Sin(angle) * sh; // GUI Y反转
+            // 裁剪到屏幕边缘
+            ex = Mathf.Clamp(ex, margin, sw - margin);
+            ey = Mathf.Clamp(ey, margin, sh - margin);
+
+            float guiAngle = -angle * Mathf.Rad2Deg;
+            DrawArrowAt(ex, ey, guiAngle, 50f, arrowColor);
+        }
+    }
+
+    /// <summary>
+    /// 在屏幕 (x,y) 处画一个三角箭头。angle=0 表示朝下。
+    /// </summary>
+    private void DrawArrowAt(float x, float y, float angle, float size, Color color)
+    {
+        var prevMatrix = GUI.matrix;
+        var prevColor = GUI.color;
+        GUI.color = color;
+
+        // 旋转绕 (x,y)
+        GUIUtility.RotateAroundPivot(angle, new Vector2(x, y));
+
+        // 画三角形：用3个旋转过的矩形近似一个箭头
+        float h = size;
+        float w = size * 0.6f;
+        // 箭头主体（向下的三角）
+        for (int i = 0; i < (int)h; i++)
+        {
+            float t = (float)i / h;
+            float lineW = w * (1f - t);
+            GUI.DrawTexture(new Rect(x - lineW / 2f, y + i, lineW, 1.5f), _arrowTex);
+        }
+
+        GUI.matrix = prevMatrix;
+        GUI.color = prevColor;
     }
 
     private Matrix4x4 BuildIntrinsicsMatrix(int width, int height)

@@ -1,5 +1,6 @@
 #import "XAtlasBridge.h"
 #include "xatlas.h"
+#include <cstdio>
 
 static NSString *const XAtlasBridgeErrorDomain = @"com.areatarget.xatlas";
 
@@ -35,7 +36,7 @@ static NSString *const XAtlasBridgeErrorDomain = @"com.areatarget.xatlas";
         return nil;
     }
 
-    // 2. Set up mesh declaration
+    // 2. Set up mesh declaration (real xatlas API)
     xatlas::MeshDecl meshDecl;
     meshDecl.vertexPositionData = vertices;
     meshDecl.vertexPositionStride = sizeof(float) * 3;
@@ -48,25 +49,14 @@ static NSString *const XAtlasBridgeErrorDomain = @"com.areatarget.xatlas";
 
     meshDecl.indexData = faces;
     meshDecl.indexCount = (uint32_t)faceCount * 3;
-    meshDecl.indexFormat = 1; // uint32
+    meshDecl.indexFormat = xatlas::IndexFormat::UInt32;
 
     // 3. Add mesh
     xatlas::AddMeshError addResult = xatlas::AddMesh(atlas, meshDecl);
     if (addResult != xatlas::AddMeshError::Success) {
         xatlas::Destroy(atlas);
         if (error) {
-            NSString *reason;
-            switch (addResult) {
-                case xatlas::AddMeshError::IndexOutOfRange:
-                    reason = @"Index out of range";
-                    break;
-                case xatlas::AddMeshError::InvalidIndexCount:
-                    reason = @"Invalid index count (must be multiple of 3)";
-                    break;
-                default:
-                    reason = @"Unknown error adding mesh";
-                    break;
-            }
+            NSString *reason = [NSString stringWithUTF8String:xatlas::StringForEnum(addResult)];
             *error = [NSError errorWithDomain:XAtlasBridgeErrorDomain
                                          code:3
                                      userInfo:@{NSLocalizedDescriptionKey: reason}];
@@ -74,10 +64,35 @@ static NSString *const XAtlasBridgeErrorDomain = @"com.areatarget.xatlas";
         return nil;
     }
 
-    // 4. Generate UV layout
-    xatlas::Generate(atlas);
+    // 4. Configure chart options for better UV continuity
+    //    Default maxCost=2.0 is too aggressive for dense ARKit meshes,
+    //    resulting in each triangle becoming its own chart.
+    //    Increasing maxCost allows charts to grow larger, merging
+    //    adjacent faces into continuous UV regions.
+    xatlas::ChartOptions chartOptions;
+    chartOptions.maxCost = 16.0f;          // Allow much larger charts (default: 2.0)
+    chartOptions.maxIterations = 4;        // More iterations for better chart quality (default: 1)
+    chartOptions.normalDeviationWeight = 2.0f;  // Keep default: respect surface curvature
+    chartOptions.roundnessWeight = 0.01f;       // Keep default
+    chartOptions.straightnessWeight = 6.0f;     // Keep default
+    chartOptions.normalSeamWeight = 4.0f;       // Keep default
+    chartOptions.textureSeamWeight = 0.5f;      // Keep default
 
-    // 5. Validate output
+    // 5. Configure pack options for 4096x4096 atlas
+    xatlas::PackOptions packOptions;
+    packOptions.resolution = 4096;
+    packOptions.padding = 2;           // 2px padding to avoid seam bleeding
+    packOptions.bilinear = true;       // Account for bilinear filtering
+    packOptions.bruteForce = false;    // Faster packing (true = slower but tighter)
+    packOptions.rotateCharts = true;   // Allow rotation for better packing
+
+    // 6. Generate UV layout
+    printf("[XAtlasBridge] Generating UV layout: %d vertices, %d faces\n", vertexCount, faceCount);
+    xatlas::Generate(atlas, chartOptions, packOptions);
+    printf("[XAtlasBridge] Result: %u charts, atlas %ux%u\n",
+           atlas->chartCount, atlas->width, atlas->height);
+
+    // 7. Validate output
     if (atlas->meshCount == 0 || atlas->meshes[0].vertexCount == 0) {
         xatlas::Destroy(atlas);
         if (error) {
@@ -88,7 +103,7 @@ static NSString *const XAtlasBridgeErrorDomain = @"com.areatarget.xatlas";
         return nil;
     }
 
-    // 6. Extract output mesh
+    // 8. Extract output mesh
     const xatlas::Mesh &outMesh = atlas->meshes[0];
     uint32_t outVertexCount = outMesh.vertexCount;
     uint32_t outIndexCount = outMesh.indexCount;
@@ -147,7 +162,7 @@ static NSString *const XAtlasBridgeErrorDomain = @"com.areatarget.xatlas";
         [outFaces addObject:@(outMesh.indexArray[i])];
     }
 
-    // 7. Build result
+    // 9. Build result
     XAtlasResult *result = [[XAtlasResult alloc] init];
     result.vertices = [outVertices copy];
     result.normals = [outNormals copy];
@@ -157,7 +172,7 @@ static NSString *const XAtlasBridgeErrorDomain = @"com.areatarget.xatlas";
     result.vertexCount = (int)outVertexCount;
     result.faceCount = (int)outFaceCount;
 
-    // 8. Cleanup
+    // 10. Cleanup
     xatlas::Destroy(atlas);
 
     return result;

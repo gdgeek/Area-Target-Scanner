@@ -30,9 +30,20 @@ unity_project/*.sln
 *.unitypackage
 *.tgz
 
-# Native build output
+# Debug scripts (root level)
+debug_*.py
+
+# Native build output & dependencies
 native_visual_localizer/build/
+native_visual_localizer/build_ios/
+native_visual_localizer/opencv_ios/
 build/
+
+# Backup files
+*.bak
+*.bak.meta
+*.stub_bak
+*.stub_bak.meta
 
 # Build logs
 /tmp/unity_ios_build*.log

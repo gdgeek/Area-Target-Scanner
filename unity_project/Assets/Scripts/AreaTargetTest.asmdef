@@ -5,7 +5,8 @@
     "AreaTargetPlugin.Runtime",
     "Unity.XR.ARFoundation",
     "Unity.XR.ARSubsystems",
-    "com.gilzoide.sqlite-net"
+    "Gilzoide.SqliteNet",
+    "glTFast"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

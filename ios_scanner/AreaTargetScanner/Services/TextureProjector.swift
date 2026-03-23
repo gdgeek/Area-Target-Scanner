@@ -24,6 +24,13 @@ final class TextureProjector {
         var assignments: [FaceFrameAssignment] = []
         assignments.reserveCapacity(faces.count)
 
+        // Pre-compute which frames to skip (identity matrix = no valid pose)
+        let skipMask = cameraPoses.map { isIdentityTransform($0.transform) }
+        let skippedCount = skipMask.filter { $0 }.count
+        if skippedCount > 0 {
+            print("[TextureProjector] Skipping \(skippedCount) identity-pose frame(s)")
+        }
+
         for faceIdx in 0..<faces.count {
             let face = faces[faceIdx]
             let v0 = vertices[Int(face.x)]
@@ -46,6 +53,9 @@ final class TextureProjector {
             var bestScore: Float = 0
 
             for frameIdx in 0..<cameraPoses.count {
+                // Skip identity-pose frames (e.g. initial scan frame with no real pose)
+                if skipMask[frameIdx] { continue }
+
                 let pose = cameraPoses[frameIdx]
                 let t = pose.transform
                 // Extract camera position from column-major transform (column 3, rows 0-2)
@@ -78,8 +88,8 @@ final class TextureProjector {
             if bestFrameIdx >= 0 {
                 assignments.append(FaceFrameAssignment(faceIndex: faceIdx, frameIndex: bestFrameIdx, score: bestScore))
             } else {
-                // Fallback: use nearest frame
-                let nearestIdx = findNearestFrame(center: center, cameraPoses: cameraPoses)
+                // Fallback: use nearest non-skipped frame
+                let nearestIdx = findNearestFrame(center: center, cameraPoses: cameraPoses, skipMask: skipMask)
                 assignments.append(FaceFrameAssignment(faceIndex: faceIdx, frameIndex: nearestIdx, score: 0))
             }
         }
@@ -87,13 +97,31 @@ final class TextureProjector {
         return assignments
     }
 
+    /// Check if a column-major float[16] transform is an identity matrix.
+    /// Identity poses indicate frames captured before ARKit tracking was established.
+    private func isIdentityTransform(_ t: [Float], tolerance: Float = 1e-4) -> Bool {
+        guard t.count == 16 else { return false }
+        let identity: [Float] = [
+            1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1
+        ]
+        for i in 0..<16 {
+            if abs(t[i] - identity[i]) > tolerance { return false }
+        }
+        return true
+    }
+
     /// Find the camera pose with minimum distance to a given point.
     /// Used as fallback when no suitable frame passes culling/frustum checks.
-    private func findNearestFrame(center: SIMD3<Float>, cameraPoses: [CameraPose]) -> Int {
+    /// Skips identity-pose frames.
+    private func findNearestFrame(center: SIMD3<Float>, cameraPoses: [CameraPose], skipMask: [Bool]) -> Int {
         var nearestIdx = 0
         var nearestDist: Float = .greatestFiniteMagnitude
 
         for i in 0..<cameraPoses.count {
+            if skipMask[i] { continue }
             let t = cameraPoses[i].transform
             let cameraPos = SIMD3<Float>(t[12], t[13], t[14])
             let dist = simd_length(cameraPos - center)

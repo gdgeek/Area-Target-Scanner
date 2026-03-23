@@ -125,3 +125,48 @@ VL_API void vl_reset(VLHandle handle) {
         // Swallow
     }
 }
+
+// ---------------------------------------------------------------------------
+// vl_process_frame_out — out-parameter version to avoid struct-return ABI
+//                        issues on iOS ARM64 with IL2CPP
+// ---------------------------------------------------------------------------
+VL_API void vl_process_frame_out(VLHandle handle,
+                                  const unsigned char* image_data,
+                                  int width, int height,
+                                  float fx, float fy, float cx, float cy,
+                                  int has_last_pose,
+                                  const float* last_pose_4x4,
+                                  VLResult* out_result) {
+    VLResult lost = makeSafeLostResult();
+
+    if (!out_result) return;
+    if (!handle || !image_data || width <= 0 || height <= 0) {
+        *out_result = lost;
+        return;
+    }
+
+    try {
+        auto* localizer = static_cast<VisualLocalizer*>(handle);
+        *out_result = localizer->processFrame(image_data, width, height,
+                                               fx, fy, cx, cy,
+                                               has_last_pose != 0, last_pose_4x4);
+    } catch (...) {
+        *out_result = lost;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// vl_get_debug_info — write last frame's pipeline diagnostics to out_info
+// ---------------------------------------------------------------------------
+VL_API void vl_get_debug_info(VLHandle handle, VLDebugInfo* out_info) {
+    VLDebugInfo empty = {};
+    empty.best_kf_id = -1;
+    if (!out_info) return;
+    if (!handle) { *out_info = empty; return; }
+    try {
+        auto* localizer = static_cast<VisualLocalizer*>(handle);
+        *out_info = localizer->getDebugInfo();
+    } catch (...) {
+        *out_info = empty;
+    }
+}

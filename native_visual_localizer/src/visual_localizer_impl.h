@@ -30,6 +30,8 @@ public:
                      const float* points3d, const float* points2d);
     bool buildIndex();
 
+    VLDebugInfo getDebugInfo() const { return last_debug_info_; }
+
     VLResult processFrame(const unsigned char* image_data, int width, int height,
                           float fx, float fy, float cx, float cy,
                           bool has_last_pose, const float* last_pose_4x4);
@@ -42,19 +44,23 @@ private:
     std::vector<KeyframeData> keyframes_;
     bool index_built_ = false;
 
-    // Algorithm parameters — matching existing C# VisualLocalizationEngine constants
-    static constexpr int kOrbNFeatures = 1000;
+    // Debug diagnostics for last processed frame
+    VLDebugInfo last_debug_info_ = {};
+
+    // Algorithm parameters — balanced for real-world AR
+    static constexpr int kOrbNFeatures = 1500;
     static constexpr int kMinFeatureCount = 10;
-    static constexpr float kLoweRatio = 0.75f;
-    static constexpr int kMinGoodMatches = 20;
-    static constexpr int kPnpIterations = 100;
-    static constexpr float kPnpReprojError = 8.0f;
+    static constexpr float kLoweRatio = 0.82f;        // 0.78太紧, 0.85太松
+    static constexpr int kMinGoodMatches = 10;         // 15太紧, 8太松
+    static constexpr int kPnpIterations = 200;
+    static constexpr float kPnpReprojError = 10.0f;    // 8太紧, 12太松
     static constexpr double kPnpConfidence = 0.99;
-    static constexpr int kMinInlierCount = 20;
-    static constexpr float kMaxConfidenceDivisor = 100.0f;
-    static constexpr float kNearbyRadius = 5.0f;
-    static constexpr int kMaxNearbyKeyframes = 5;
-    static constexpr int kGlobalTopK = 10;
+    static constexpr int kMinInlierCount = 10;         // 15太紧, 8太松
+    static constexpr float kMaxConfidenceDivisor = 60.0f;
+    static constexpr float kNearbyRadius = 10.0f;     // was 5.0: wider search radius
+    static constexpr int kMaxNearbyKeyframes = 10;    // was 5: check more candidates
+    static constexpr int kGlobalTopK = 20;            // was 10: more BoW candidates
+    static constexpr int kAbsoluteDistThreshold = 64;  // Hamming distance fallback threshold (max 256)
 
     // Internal methods
     std::vector<float> computeBoW(const cv::Mat& descriptors);
@@ -63,7 +69,9 @@ private:
     VLResult tryMatchKeyframe(const KeyframeData& kf,
                               const std::vector<cv::KeyPoint>& query_kps,
                               const cv::Mat& query_desc,
-                              float fx, float fy, float cx, float cy);
+                              float fx, float fy, float cx, float cy,
+                              int* out_raw_matches = nullptr,
+                              int* out_good_matches = nullptr);
     static int hammingDistance(const unsigned char* a, const unsigned char* b, int len);
     static float cosineSimilarity(const std::vector<float>& a, const std::vector<float>& b);
 };

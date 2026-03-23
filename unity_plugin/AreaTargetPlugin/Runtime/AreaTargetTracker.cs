@@ -133,6 +133,14 @@ namespace AreaTargetPlugin
             Debug.Log("[AreaTargetPlugin] Tracker reset.");
         }
 
+        /// <summary>
+        /// Returns debug diagnostics from the last processed frame's native pipeline.
+        /// </summary>
+        internal VLDebugInfo GetDebugInfo()
+        {
+            return _localizationEngine?.GetDebugInfo() ?? default;
+        }
+
         /// <inheritdoc/>
         /// <remarks>
         /// Releases all resources: localization engine, feature database,

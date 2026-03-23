@@ -62,7 +62,8 @@ namespace AreaTargetPlugin
             float[] lastPose = LastValidPose.HasValue
                 ? Matrix4x4ToArray(LastValidPose.Value) : null;
 
-            VLResult result = NativeLocalizerBridge.vl_process_frame(
+            // Use ProcessFrameSafe to avoid struct-return ABI issues on iOS ARM64
+            VLResultData result = NativeLocalizerBridge.ProcessFrameSafe(
                 _nativeHandle, frame.ImageData, frame.Width, frame.Height,
                 frame.Intrinsics.m00, frame.Intrinsics.m11,
                 frame.Intrinsics.m02, frame.Intrinsics.m12,
@@ -87,6 +88,17 @@ namespace AreaTargetPlugin
             LastValidPose = null;
             if (_nativeHandle != IntPtr.Zero)
                 NativeLocalizerBridge.vl_reset(_nativeHandle);
+        }
+
+        /// <summary>
+        /// Returns debug diagnostics from the last processed frame.
+        /// Requires native lib with vl_get_debug_info; returns default if unavailable.
+        /// </summary>
+        internal VLDebugInfo GetDebugInfo()
+        {
+            if (_nativeHandle == IntPtr.Zero)
+                return default;
+            return NativeLocalizerBridge.GetDebugInfoSafe(_nativeHandle);
         }
 
         public void Dispose()

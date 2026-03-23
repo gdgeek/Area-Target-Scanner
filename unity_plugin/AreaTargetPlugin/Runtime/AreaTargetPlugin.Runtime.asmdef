@@ -2,7 +2,7 @@
   "name": "AreaTargetPlugin.Runtime",
   "rootNamespace": "AreaTargetPlugin",
   "references": [
-    "com.gilzoide.sqlite-net"
+    "Gilzoide.SqliteNet"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

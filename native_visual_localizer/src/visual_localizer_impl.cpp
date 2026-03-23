@@ -110,6 +110,10 @@ VLResult VisualLocalizer::processFrame(const unsigned char* image_data,
                                         const float* last_pose_4x4) {
     VLResult lost = makeLostResult();
 
+    // Reset debug info
+    last_debug_info_ = {};
+    last_debug_info_.best_kf_id = -1;
+
     if (!image_data || width <= 0 || height <= 0)
         return lost;
 
@@ -121,6 +125,8 @@ VLResult VisualLocalizer::processFrame(const unsigned char* image_data,
     std::vector<cv::KeyPoint> keypoints;
     cv::Mat descriptors;
     orb_->detectAndCompute(gray, cv::noArray(), keypoints, descriptors);
+
+    last_debug_info_.orb_keypoints = static_cast<int>(keypoints.size());
 
     if (static_cast<int>(keypoints.size()) < kMinFeatureCount || descriptors.empty())
         return lost;
@@ -136,21 +142,35 @@ VLResult VisualLocalizer::processFrame(const unsigned char* image_data,
         candidates = getGlobalCandidates(descriptors);
     }
 
+    last_debug_info_.candidate_keyframes = static_cast<int>(candidates.size());
+
     if (candidates.empty())
         return lost;
 
     // Step 4: Try matching each candidate, keep best by inlier count
     VLResult best = lost;
     int best_inliers = 0;
+    int best_raw = 0, best_good = 0;
 
     for (auto* kf : candidates) {
+        int raw_matches = 0, good_matches_count = 0;
         VLResult result = tryMatchKeyframe(*kf, keypoints, descriptors,
-                                            fx, fy, cx, cy);
+                                            fx, fy, cx, cy,
+                                            &raw_matches, &good_matches_count);
+        if (raw_matches > best_raw) best_raw = raw_matches;
+        if (good_matches_count > best_good) {
+            best_good = good_matches_count;
+        }
         if (result.state == 1 && result.matched_features > best_inliers) {
             best = result;
             best_inliers = result.matched_features;
+            last_debug_info_.best_kf_id = kf->id;
         }
     }
+
+    last_debug_info_.best_raw_matches = best_raw;
+    last_debug_info_.best_good_matches = best_good;
+    last_debug_info_.best_inliers = best_inliers;
 
     return best;
 }
@@ -162,8 +182,12 @@ VLResult VisualLocalizer::tryMatchKeyframe(const KeyframeData& kf,
                                             const std::vector<cv::KeyPoint>& query_kps,
                                             const cv::Mat& query_desc,
                                             float fx, float fy,
-                                            float cx, float cy) {
+                                            float cx, float cy,
+                                            int* out_raw_matches,
+                                            int* out_good_matches) {
     VLResult lost = makeLostResult();
+    if (out_raw_matches) *out_raw_matches = 0;
+    if (out_good_matches) *out_good_matches = 0;
 
     if (kf.descriptors.empty())
         return lost;
@@ -171,6 +195,8 @@ VLResult VisualLocalizer::tryMatchKeyframe(const KeyframeData& kf,
     // KNN match (k=2)
     std::vector<std::vector<cv::DMatch>> knn_matches;
     matcher_->knnMatch(query_desc, kf.descriptors, knn_matches, 2);
+
+    if (out_raw_matches) *out_raw_matches = static_cast<int>(knn_matches.size());
 
     // Lowe ratio test
     std::vector<cv::DMatch> good_matches;
@@ -181,8 +207,20 @@ VLResult VisualLocalizer::tryMatchKeyframe(const KeyframeData& kf,
         }
     }
 
+    // Fallback: if Lowe ratio yields too few matches, use absolute distance threshold
+    if (static_cast<int>(good_matches.size()) < kMinGoodMatches) {
+        good_matches.clear();
+        for (const auto& m : knn_matches) {
+            if (!m.empty() && m[0].distance < kAbsoluteDistThreshold) {
+                good_matches.push_back(m[0]);
+            }
+        }
+    }
+
     if (static_cast<int>(good_matches.size()) < kMinGoodMatches)
         return lost;
+
+    if (out_good_matches) *out_good_matches = static_cast<int>(good_matches.size());
 
     // Build 3D-2D correspondences from good matches
     std::vector<cv::Point3f> obj_pts;
@@ -218,6 +256,18 @@ VLResult VisualLocalizer::tryMatchKeyframe(const KeyframeData& kf,
         return lost;
 
     // Compose pose matrix from rvec/tvec via Rodrigues
+    // solvePnPRansac returns world-to-camera extrinsic [R|t] in OpenCV
+    // camera convention (x-right, y-down, z-forward).
+    // Unity/ARKit uses (x-right, y-up, z-back).
+    //
+    // The 3D points fed to PnP are already in ARKit world coordinates (Y-up),
+    // so PnP output [R|t] maps ARKit-world → OpenCV-camera.
+    // The relationship is: R_opencv = flip * R_arkit_w2c, where flip = diag(1,-1,-1).
+    // Therefore: R_arkit_w2c = flip * R_opencv  (left-multiply only).
+    // Translation: t_arkit = flip * t_opencv.
+    //
+    // IMPORTANT: Do NOT right-multiply by flip — the world coordinates are
+    // already in ARKit convention and must not be flipped.
     cv::Mat rot_mat;
     cv::Rodrigues(rvec, rot_mat);
 
@@ -227,13 +277,22 @@ VLResult VisualLocalizer::tryMatchKeyframe(const KeyframeData& kf,
         static_cast<float>(inlier_count) / kMaxConfidenceDivisor);
     result.matched_features = inlier_count;
 
-    // Fill row-major 4x4 pose matrix
+    // Fill row-major 4x4 pose: R' = flip * R_opencv, t' = flip * t_opencv
+    float R_raw[3][3];
+    for (int r = 0; r < 3; r++)
+        for (int c = 0; c < 3; c++)
+            R_raw[r][c] = static_cast<float>(rot_mat.at<double>(r, c));
+
+    float t_raw[3];
+    for (int r = 0; r < 3; r++)
+        t_raw[r] = static_cast<float>(tvec.at<double>(r, 0));
+
+    // Apply flip = diag(1,-1,-1) on the LEFT only: R' = flip * R, t' = flip * t
+    float flip[3] = {1.0f, -1.0f, -1.0f};
     for (int r = 0; r < 3; r++) {
         for (int c = 0; c < 3; c++)
-            result.pose[r * 4 + c] =
-                static_cast<float>(rot_mat.at<double>(r, c));
-        result.pose[r * 4 + 3] =
-            static_cast<float>(tvec.at<double>(r, 0));
+            result.pose[r * 4 + c] = flip[r] * R_raw[r][c];
+        result.pose[r * 4 + 3] = flip[r] * t_raw[r];
     }
     result.pose[12] = 0.0f;
     result.pose[13] = 0.0f;
@@ -370,6 +429,11 @@ std::vector<KeyframeData*> VisualLocalizer::getGlobalCandidates(
     result.reserve(count);
     for (int i = 0; i < count; i++) {
         result.push_back(scored[i].kf);
+    }
+
+    // Record best BoW similarity for debug
+    if (!scored.empty()) {
+        last_debug_info_.best_bow_sim = scored[0].similarity;
     }
 
     return result;

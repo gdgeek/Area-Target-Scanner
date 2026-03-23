@@ -30,8 +30,16 @@ final class TextureMappingPipeline {
 
         // 2. Merge mesh anchors into a single unified mesh (throws noMeshData if empty)
         onProgress?("正在合并网格 (\(meshAnchors.count) 个)...")
-        let mergedMesh = try mergeMeshAnchors(meshAnchors)
-        print("[TextureMappingPipeline] Merged mesh: \(mergedMesh.vertices.count) vertices, \(mergedMesh.faces.count) faces")
+        let rawMerged = try mergeMeshAnchors(meshAnchors)
+        print("[TextureMappingPipeline] Merged mesh (raw): \(rawMerged.vertices.count) vertices, \(rawMerged.faces.count) faces")
+
+        // 2.5 Weld colocal vertices to restore mesh topology.
+        // ARKit mesh anchors produce per-triangle vertices (no sharing across faces),
+        // which causes xatlas to treat each triangle as an isolated chart.
+        // Welding merges vertices within epsilon distance, enabling proper chart growth.
+        onProgress?("正在焊接顶点...")
+        let mergedMesh = weldVertices(rawMerged, epsilon: 1e-5)
+        print("[TextureMappingPipeline] Welded mesh: \(mergedMesh.vertices.count) vertices, \(mergedMesh.faces.count) faces")
 
         // 3. UV unwrap the merged mesh
         onProgress?("正在UV展开 (\(mergedMesh.vertices.count) 顶点, \(mergedMesh.faces.count) 面)...")
@@ -259,5 +267,112 @@ final class TextureMappingPipeline {
         }
 
         return MergedMesh(vertices: vertices, normals: normals, faces: faces)
+    }
+
+    // MARK: - Vertex Welding
+
+    /// Merge colocal vertices (within epsilon distance) to restore mesh topology.
+    ///
+    /// ARKit mesh anchors produce per-triangle vertices with no index sharing
+    /// across faces. This causes UV unwrappers like xatlas to treat each triangle
+    /// as an isolated chart. Welding merges duplicate vertices so adjacent
+    /// triangles share vertex indices, enabling proper chart growth.
+    ///
+    /// Uses spatial hashing (grid cells of size epsilon) for O(n) performance.
+    func weldVertices(_ mesh: MergedMesh, epsilon: Float = 1e-5) -> MergedMesh {
+        let vertexCount = mesh.vertices.count
+        if vertexCount == 0 { return mesh }
+
+        // Spatial hash: quantize each vertex position to a grid cell
+        let invEps = 1.0 / epsilon
+
+        // Map from grid cell to list of (original index, canonical index)
+        // We use a dictionary keyed by quantized (ix, iy, iz)
+        struct GridKey: Hashable {
+            let x: Int64
+            let y: Int64
+            let z: Int64
+        }
+
+        var grid: [GridKey: [Int]] = [:]
+        var oldToNew = [UInt32](repeating: 0, count: vertexCount)
+        var newVertices: [SIMD3<Float>] = []
+        var newNormals: [SIMD3<Float>] = []
+        // Track accumulated normals for averaging
+        var normalAccum: [SIMD3<Float>] = []
+        var normalCount: [Int] = []
+
+        for i in 0..<vertexCount {
+            let v = mesh.vertices[i]
+            let gx = Int64(floor(Double(v.x) * Double(invEps)))
+            let gy = Int64(floor(Double(v.y) * Double(invEps)))
+            let gz = Int64(floor(Double(v.z) * Double(invEps)))
+
+            // Check this cell and 26 neighbors (to handle vertices near cell boundaries)
+            var foundIdx: Int = -1
+            outerLoop: for dx in Int64(-1)...Int64(1) {
+                for dy in Int64(-1)...Int64(1) {
+                    for dz in Int64(-1)...Int64(1) {
+                        let key = GridKey(x: gx + dx, y: gy + dy, z: gz + dz)
+                        if let candidates = grid[key] {
+                            for ci in candidates {
+                                let cv = newVertices[ci]
+                                let diff = v - cv
+                                if simd_dot(diff, diff) <= epsilon * epsilon {
+                                    foundIdx = ci
+                                    break outerLoop
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if foundIdx >= 0 {
+                // Merge into existing vertex
+                oldToNew[i] = UInt32(foundIdx)
+                normalAccum[foundIdx] += mesh.normals[i]
+                normalCount[foundIdx] += 1
+            } else {
+                // New unique vertex
+                let newIdx = newVertices.count
+                oldToNew[i] = UInt32(newIdx)
+                newVertices.append(v)
+                normalAccum.append(mesh.normals[i])
+                normalCount.append(1)
+
+                let key = GridKey(x: gx, y: gy, z: gz)
+                grid[key, default: []].append(newIdx)
+            }
+        }
+
+        // Average normals
+        newNormals.reserveCapacity(newVertices.count)
+        for i in 0..<newVertices.count {
+            let n = normalAccum[i]
+            let len = simd_length(n)
+            newNormals.append(len > 0 ? n / len : SIMD3<Float>(0, 1, 0))
+        }
+
+        // Remap face indices and remove degenerate faces
+        var newFaces: [SIMD3<UInt32>] = []
+        newFaces.reserveCapacity(mesh.faces.count)
+        var degenerateCount = 0
+        for face in mesh.faces {
+            let i0 = oldToNew[Int(face.x)]
+            let i1 = oldToNew[Int(face.y)]
+            let i2 = oldToNew[Int(face.z)]
+            if i0 != i1 && i1 != i2 && i0 != i2 {
+                newFaces.append(SIMD3<UInt32>(i0, i1, i2))
+            } else {
+                degenerateCount += 1
+            }
+        }
+
+        if degenerateCount > 0 {
+            print("[TextureMappingPipeline] Removed \(degenerateCount) degenerate faces after welding")
+        }
+
+        return MergedMesh(vertices: newVertices, normals: newNormals, faces: newFaces)
     }
 }

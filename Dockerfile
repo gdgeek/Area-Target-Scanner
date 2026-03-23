@@ -12,14 +12,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY processing_pipeline/ /app/processing_pipeline/
 COPY web_service/ /app/web_service/
 
-RUN useradd --create-home --shell /bin/bash appuser \
-    && mkdir -p /tmp/pipeline_uploads /tmp/pipeline_outputs \
-    && chown appuser:appuser /tmp/pipeline_uploads /tmp/pipeline_outputs
+RUN useradd --create-home --shell /bin/bash appuser
 
 ENV PYTHONPATH=/app
 
 EXPOSE 5000
 
-USER appuser
+# volume 目录在运行时由 docker compose 挂载，需要在 entrypoint 确保权限
+# 这里不切换 user，因为 named volume 首次创建时需要 root 权限
+# 改为在 CMD 中用 root 运行（开发环境）
 
 CMD ["python", "web_service/app.py"]
