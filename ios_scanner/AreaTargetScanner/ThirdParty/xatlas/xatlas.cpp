@@ -68,8 +68,11 @@ Copyright (c) 2012 Brandon Pelfrey
 #include <chrono>
 #endif
 
+// Disable multithreading on iOS to avoid deadlock with std::thread/condition_variable
+// when called from Swift async context or main thread.
+// Single-threaded is fast enough for our mesh sizes (~60K vertices).
 #ifndef XA_MULTITHREADED
-#define XA_MULTITHREADED 1
+#define XA_MULTITHREADED 0
 #endif
 
 #define XA_STR(x) #x
