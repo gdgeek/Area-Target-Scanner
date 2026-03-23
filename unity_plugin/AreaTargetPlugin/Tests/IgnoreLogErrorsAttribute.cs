@@ -7,7 +7,10 @@ namespace AreaTargetPlugin.Tests
 {
     /// <summary>
     /// Custom NUnit attribute that suppresses Debug.LogError failures in tests.
-    /// Apply to a test class to ignore all error log messages.
+    /// Apply to a test class or method to ignore all error log messages.
+    /// 
+    /// NOTE: This attribute alone may not reliably suppress errors in all Unity versions.
+    /// For maximum reliability, also add LogAssert.ignoreFailingMessages = true in [SetUp].
     /// </summary>
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
     public class IgnoreLogErrorsAttribute : NUnitAttribute, ITestAction
@@ -21,6 +24,8 @@ namespace AreaTargetPlugin.Tests
 
         public void AfterTest(ITest test)
         {
+            // Intentionally left empty — do NOT reset ignoreFailingMessages here.
+            // Unity's LogScope will handle cleanup when the test ends.
         }
     }
 }

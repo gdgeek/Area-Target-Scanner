@@ -3,7 +3,8 @@
   "rootNamespace": "AreaTargetPlugin.Tests",
   "references": [
     "AreaTargetPlugin.Runtime",
-    "AreaTargetTest"
+    "AreaTargetTest",
+    "Unity.XR.ARFoundation"
   ],
   "includePlatforms": [
     "Editor"

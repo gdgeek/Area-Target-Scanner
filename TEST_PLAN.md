@@ -155,7 +155,7 @@ docker compose down
 
 | 优先级 | 失败症状 | 最可能原因 | 修复方法 |
 |--------|---------|-----------|---------|
-| P0 | Unity 测试编译失败 | asmdef 引用缺失或 NuGet 包未安装 | 检查 FsCheck.dll、Microsoft.Data.Sqlite.dll 是否在 Plugins 目录 |
+| P0 | Unity 测试编译失败 | asmdef 引用缺失或 UPM 包未安装 | 检查 FsCheck.dll 是否在 Plugins 目录，com.gilzoide.sqlite-net 是否在 manifest.json |
 | P0 | iOS 测试编译失败 | pbxproj 文件引用 ID 冲突 | 在 Xcode 中手动 Add Files 添加 4 个新测试文件 |
 | P1 | Kalman 收敛测试精度不够 | 浮点精度在不同平台有差异 | 放宽 Assert 的 tolerance 到 0.2f |
 | P1 | async 测试超时 | Unity NUnit 版本不支持 async | 改用 `[UnityTest]` + `yield return` 模式 |

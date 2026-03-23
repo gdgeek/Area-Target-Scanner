@@ -17,10 +17,10 @@
 | `Packages/com.areatarget.tracking/CHANGELOG.md` | 变更日志 |
 | `Packages/com.areatarget.tracking/LICENSE.md` | 许可证 |
 | `Packages/com.areatarget.tracking/README.md` | 说明文档 |
-| `Assets/Plugins/macOS/*.dylib` | macOS 原生库（visual_localizer + e_sqlite3） |
+| `Assets/Plugins/macOS/*.dylib` | macOS 原生库（visual_localizer） |
 | `Assets/Plugins/x86_64/*.so` | Linux 原生库 |
 | `Assets/Plugins/x86_64-win/*.dll` | Windows 原生库 |
-| `Assets/Plugins/Managed/*.dll` | 托管 DLL（Microsoft.Data.Sqlite + SQLitePCLRaw） |
+| `Assets/Plugins/Managed/*.dll` | 托管 DLL（FsCheck 等测试依赖） |
 | `Assets/link.xml` | IL2CPP 防裁剪配置 |
 
 ## 不包含的内容

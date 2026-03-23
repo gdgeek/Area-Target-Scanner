@@ -32,3 +32,8 @@ unity_project/*.sln
 
 # Native build output
 native_visual_localizer/build/
+build/
+
+# Build logs
+/tmp/unity_ios_build*.log
+/tmp/xcode_build*.log

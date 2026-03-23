@@ -106,7 +106,7 @@ final class ARKitScannerService: NSObject, ScannerService {
         )
     }
 
-    func exportScanData(outputPath: String) throws -> Bool {
+    func exportScanData(outputPath: String, onProgress: ((String) -> Void)? = nil) throws -> Bool {
         guard !isScanning else {
             throw ScannerError.scanAlreadyInProgress
         }
@@ -128,7 +128,8 @@ final class ARKitScannerService: NSObject, ScannerService {
                 intrinsics: intrinsics,
                 images: capturedImages,
                 meshAnchors: meshAnchors,
-                outputPath: outputPath
+                outputPath: outputPath,
+                onProgress: onProgress
             )
         } catch {
             throw ScannerError.exportFailed(reason: error.localizedDescription)

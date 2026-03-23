@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
-using Microsoft.Data.Sqlite;
+using SQLite;
 
 namespace AreaTargetPlugin
 {
@@ -31,7 +31,7 @@ namespace AreaTargetPlugin
 
     /// <summary>
     /// Reads the SQLite feature database produced by the processing pipeline.
-    /// Provides keyframe data, vocabulary, and search methods for visual localization.
+    /// Uses gilzoide/unity-sqlite-net (SQLite-net) for cross-platform SQLite access.
     /// </summary>
     public class FeatureDatabaseReader : IDisposable
     {
@@ -57,12 +57,10 @@ namespace AreaTargetPlugin
             _keyframes = new List<KeyframeRecord>();
             _vocabulary = new List<VocabularyWord>();
 
-            string connectionString = $"Data Source={dbPath}";
             try
             {
-                using (var conn = new SqliteConnection(connectionString))
+                using (var conn = new SQLiteConnection(dbPath, SQLiteOpenFlags.ReadOnly))
                 {
-                    conn.Open();
                     LoadKeyframes(conn);
                     LoadVocabulary(conn);
                 }
@@ -75,99 +73,76 @@ namespace AreaTargetPlugin
             }
         }
 
-        private void LoadKeyframes(SqliteConnection conn)
+        private void LoadKeyframes(SQLiteConnection conn)
         {
-            // 1. Load all keyframe records into a dictionary keyed by id
-            var kfCmd = conn.CreateCommand();
-            kfCmd.CommandText = "SELECT id, pose, global_descriptor FROM keyframes ORDER BY id";
+            // 1. Load all keyframe records
             var kfMap = new Dictionary<int, KeyframeRecord>();
-            using (var reader = kfCmd.ExecuteReader())
+            var kfStmt = conn.CreateCommand("SELECT id, pose, global_descriptor FROM keyframes ORDER BY id");
+            foreach (var row in kfStmt.ExecuteDeferredQuery<KeyframeRow>())
             {
-                while (reader.Read())
+                var kf = new KeyframeRecord
                 {
-                    var kf = new KeyframeRecord
-                    {
-                        Id = reader.GetInt32(0),
-                        Keypoints2D = new List<Vector2>(),
-                        Points3D = new List<Vector3>(),
-                        Descriptors = new List<byte[]>()
-                    };
+                    Id = row.id,
+                    Keypoints2D = new List<Vector2>(),
+                    Points3D = new List<Vector3>(),
+                    Descriptors = new List<byte[]>()
+                };
 
-                    // Parse pose (stored as 16 doubles, 128 bytes)
-                    byte[] poseBlob = (byte[])reader["pose"];
+                // Parse pose (stored as 16 doubles, 128 bytes)
+                if (row.pose != null)
+                {
                     kf.Pose = new float[16];
                     for (int i = 0; i < 16; i++)
                     {
-                        kf.Pose[i] = (float)BitConverter.ToDouble(poseBlob, i * 8);
+                        kf.Pose[i] = (float)BitConverter.ToDouble(row.pose, i * 8);
                     }
-
-                    // Parse global descriptor if present
-                    if (!reader.IsDBNull(2))
-                    {
-                        byte[] gdBlob = (byte[])reader["global_descriptor"];
-                        int gdLen = gdBlob.Length / 8;
-                        kf.GlobalDescriptor = new float[gdLen];
-                        for (int i = 0; i < gdLen; i++)
-                        {
-                            kf.GlobalDescriptor[i] = (float)BitConverter.ToDouble(gdBlob, i * 8);
-                        }
-                    }
-
-                    kfMap[kf.Id] = kf;
-                    _keyframes.Add(kf);
                 }
+
+                // Parse global descriptor if present
+                if (row.global_descriptor != null && row.global_descriptor.Length > 0)
+                {
+                    int gdLen = row.global_descriptor.Length / 8;
+                    kf.GlobalDescriptor = new float[gdLen];
+                    for (int i = 0; i < gdLen; i++)
+                    {
+                        kf.GlobalDescriptor[i] = (float)BitConverter.ToDouble(row.global_descriptor, i * 8);
+                    }
+                }
+
+                kfMap[kf.Id] = kf;
+                _keyframes.Add(kf);
             }
 
-            // 2. Load all features in a single query, group by keyframe_id in memory
-            var featCmd = conn.CreateCommand();
-            featCmd.CommandText = "SELECT keyframe_id, x, y, x3d, y3d, z3d, descriptor FROM features ORDER BY keyframe_id, id";
-            using (var reader = featCmd.ExecuteReader())
+            // 2. Load all features, group by keyframe_id
+            var featStmt = conn.CreateCommand(
+                "SELECT keyframe_id, x, y, x3d, y3d, z3d, descriptor FROM features ORDER BY keyframe_id, id");
+            foreach (var row in featStmt.ExecuteDeferredQuery<FeatureRow>())
             {
-                while (reader.Read())
+                if (kfMap.TryGetValue(row.keyframe_id, out var kf))
                 {
-                    int kfId = reader.GetInt32(0);
-                    if (kfMap.TryGetValue(kfId, out var kf))
-                    {
-                        float x = (float)reader.GetDouble(1);
-                        float y = (float)reader.GetDouble(2);
-                        float x3d = (float)reader.GetDouble(3);
-                        float y3d = (float)reader.GetDouble(4);
-                        float z3d = (float)reader.GetDouble(5);
-                        byte[] desc = (byte[])reader["descriptor"];
-
-                        kf.Keypoints2D.Add(new Vector2(x, y));
-                        kf.Points3D.Add(new Vector3(x3d, y3d, z3d));
-                        kf.Descriptors.Add(desc);
-                    }
+                    kf.Keypoints2D.Add(new Vector2((float)row.x, (float)row.y));
+                    kf.Points3D.Add(new Vector3((float)row.x3d, (float)row.y3d, (float)row.z3d));
+                    kf.Descriptors.Add(row.descriptor);
                 }
             }
         }
 
-        private void LoadVocabulary(SqliteConnection conn)
+        private void LoadVocabulary(SQLiteConnection conn)
         {
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT word_id, descriptor, idf_weight FROM vocabulary ORDER BY word_id";
-            using (var reader = cmd.ExecuteReader())
+            var stmt = conn.CreateCommand("SELECT word_id, descriptor, idf_weight FROM vocabulary ORDER BY word_id");
+            foreach (var row in stmt.ExecuteDeferredQuery<VocabularyRow>())
             {
-                while (reader.Read())
+                _vocabulary.Add(new VocabularyWord
                 {
-                    var word = new VocabularyWord
-                    {
-                        WordId = reader.GetInt32(0),
-                        IdfWeight = (float)reader.GetDouble(2)
-                    };
-
-                    byte[] descBlob = (byte[])reader["descriptor"];
-                    word.Descriptor = descBlob;
-
-                    _vocabulary.Add(word);
-                }
+                    WordId = row.word_id,
+                    Descriptor = row.descriptor,
+                    IdfWeight = (float)row.idf_weight
+                });
             }
         }
 
         /// <summary>
         /// Returns keyframes within the given radius of a position (extracted from pose translation).
-        /// Used when a previous valid pose exists for local search.
         /// </summary>
         public List<KeyframeRecord> GetNearbyKeyframes(Vector3 position, float radius, int maxCount)
         {
@@ -176,7 +151,6 @@ namespace AreaTargetPlugin
 
             foreach (var kf in _keyframes)
             {
-                // Extract translation from the 4x4 pose matrix (row-major: indices 3, 7, 11)
                 Vector3 kfPos = new Vector3(kf.Pose[3], kf.Pose[7], kf.Pose[11]);
                 float distSq = (kfPos - position).sqrMagnitude;
                 if (distSq <= radiusSq)
@@ -196,7 +170,6 @@ namespace AreaTargetPlugin
 
         /// <summary>
         /// Returns the top-K keyframes by BoW similarity to the given query BoW vector.
-        /// Used for global relocalization when no previous pose is available.
         /// </summary>
         public List<KeyframeRecord> GetTopKByBoWSimilarity(float[] queryBoW, int k)
         {
@@ -209,7 +182,7 @@ namespace AreaTargetPlugin
                 scored.Add((kf, score));
             }
 
-            scored.Sort((a, b) => b.score.CompareTo(a.score)); // descending
+            scored.Sort((a, b) => b.score.CompareTo(a.score));
             var result = new List<KeyframeRecord>();
             for (int i = 0; i < Math.Min(k, scored.Count); i++)
             {
@@ -218,9 +191,6 @@ namespace AreaTargetPlugin
             return result;
         }
 
-        /// <summary>
-        /// Computes cosine similarity between two BoW vectors.
-        /// </summary>
         private static float ComputeBoWSimilarity(float[] a, float[] b)
         {
             if (a == null || b == null) return 0f;
@@ -242,6 +212,32 @@ namespace AreaTargetPlugin
             _disposed = true;
             _keyframes = null;
             _vocabulary = null;
+        }
+
+        // Internal row types for sqlite-net query mapping
+        private class KeyframeRow
+        {
+            public int id { get; set; }
+            public byte[] pose { get; set; }
+            public byte[] global_descriptor { get; set; }
+        }
+
+        private class FeatureRow
+        {
+            public int keyframe_id { get; set; }
+            public double x { get; set; }
+            public double y { get; set; }
+            public double x3d { get; set; }
+            public double y3d { get; set; }
+            public double z3d { get; set; }
+            public byte[] descriptor { get; set; }
+        }
+
+        private class VocabularyRow
+        {
+            public int word_id { get; set; }
+            public byte[] descriptor { get; set; }
+            public double idf_weight { get; set; }
         }
     }
 }

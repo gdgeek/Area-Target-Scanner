@@ -7,15 +7,17 @@ struct ModelPreviewView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var loadError: String? = nil
     @State private var loadSuccess = false
+    @State private var debugInfo: String = ""
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             // Dark background instead of white
             Color(red: 0.15, green: 0.15, blue: 0.15).ignoresSafeArea()
 
-            SceneModelView(fileURL: fileURL, onLoad: { success, error in
+            SceneModelView(fileURL: fileURL, onLoad: { success, error, info in
                 loadSuccess = success
                 loadError = error
+                debugInfo = info ?? ""
             })
             .ignoresSafeArea()
 
@@ -39,6 +41,9 @@ struct ModelPreviewView: View {
                     if let err = loadError {
                         Text("❌ 错误: \(err)").font(.system(size: 10, design: .monospaced)).foregroundStyle(.red)
                     }
+                    if !debugInfo.isEmpty {
+                        Text(debugInfo).font(.system(size: 9, design: .monospaced)).foregroundStyle(.white.opacity(0.7))
+                    }
                 }
                 .padding(8)
                 .background(.black.opacity(0.7))
@@ -51,7 +56,7 @@ struct ModelPreviewView: View {
 
 struct SceneModelView: UIViewRepresentable {
     let fileURL: URL
-    var onLoad: ((Bool, String?) -> Void)?
+    var onLoad: ((Bool, String?, String?) -> Void)?
 
     func makeUIView(context: Context) -> SCNView {
         let scnView = SCNView()
@@ -61,13 +66,29 @@ struct SceneModelView: UIViewRepresentable {
 
         do {
             let scene = try SCNScene(url: fileURL, options: [
-                .checkConsistency: true
+                .checkConsistency: true,
+                .convertToYUp: false
             ])
             scnView.scene = scene
 
-            // Count nodes for debug
+            // Ensure materials use the diffuse texture for rendering
+            // and collect debug info in the same pass
             var nodeCount = 0
-            scene.rootNode.enumerateChildNodes { _, _ in nodeCount += 1 }
+            var hasMaterial = false
+            var hasTexture = false
+            scene.rootNode.enumerateChildNodes { node, _ in
+                nodeCount += 1
+                if let geometry = node.geometry {
+                    for mat in geometry.materials {
+                        hasMaterial = true
+                        mat.lightingModel = .lambert
+                        mat.isDoubleSided = true
+                        if mat.diffuse.contents != nil {
+                            hasTexture = true
+                        }
+                    }
+                }
+            }
 
             // Auto-frame
             let (minVec, maxVec) = scene.rootNode.boundingBox
@@ -92,11 +113,12 @@ struct SceneModelView: UIViewRepresentable {
             }
 
             DispatchQueue.main.async {
-                onLoad?(true, "nodes=\(nodeCount), size=\(String(format: "%.2f", size))")
+                onLoad?(true, nil, "nodes=\(nodeCount), size=\(String(format: "%.2f", size)), material=\(hasMaterial), texture=\(hasTexture)")
             }
+            print("[ModelPreview] 加载成功: nodes=\(nodeCount), size=\(String(format: "%.2f", size)), material=\(hasMaterial), texture=\(hasTexture)")
         } catch {
             DispatchQueue.main.async {
-                onLoad?(false, error.localizedDescription)
+                onLoad?(false, error.localizedDescription, nil)
             }
         }
 

@@ -123,21 +123,15 @@ public class SLAMTestSceneManager : MonoBehaviour
         // 先直接测试 SQLite 连接
         try
         {
-            var connStr = $"Data Source={_loader.FeatureDbPath}";
-            log.Add($"SQLite连接: {connStr}");
-            using (var testConn = new Microsoft.Data.Sqlite.SqliteConnection(connStr))
+            log.Add($"SQLite连接: {_loader.FeatureDbPath}");
+            using (var testConn = new SQLite.SQLiteConnection(_loader.FeatureDbPath, SQLite.SQLiteOpenFlags.ReadOnly))
             {
-                testConn.Open();
                 log.Add($"SQLite Open: OK");
-                var cmd = testConn.CreateCommand();
-                cmd.CommandText = "SELECT COUNT(*) FROM keyframes";
-                var count = cmd.ExecuteScalar();
+                var count = testConn.ExecuteScalar<int>("SELECT COUNT(*) FROM keyframes");
                 log.Add($"keyframes行数: {count}");
-                cmd.CommandText = "SELECT COUNT(*) FROM vocabulary";
-                count = cmd.ExecuteScalar();
+                count = testConn.ExecuteScalar<int>("SELECT COUNT(*) FROM vocabulary");
                 log.Add($"vocabulary行数: {count}");
-                cmd.CommandText = "SELECT COUNT(*) FROM features";
-                count = cmd.ExecuteScalar();
+                count = testConn.ExecuteScalar<int>("SELECT COUNT(*) FROM features");
                 log.Add($"features行数: {count}");
             }
         }

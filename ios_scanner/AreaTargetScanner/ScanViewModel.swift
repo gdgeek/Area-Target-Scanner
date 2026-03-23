@@ -80,13 +80,17 @@ final class ScanViewModel: ObservableObject {
                 let prog = scanner.getScanProgress()
                 await MainActor.run { self?.progress = prog }
 
-                // Step 2: Export data
-                await MainActor.run { self?.state = .processing("正在导出数据...") }
+                // Step 2: Export data with progress callback
+                await MainActor.run { self?.state = .processing("正在准备导出...") }
                 let outputPath = self?.makeExportPath() ?? ""
-                let _ = try scanner.exportScanData(outputPath: outputPath)
+                let _ = try scanner.exportScanData(outputPath: outputPath) { status in
+                    Task { @MainActor in
+                        self?.state = .processing(status)
+                    }
+                }
 
                 // Step 3: Create zip
-                await MainActor.run { self?.state = .processing("正在打包...") }
+                await MainActor.run { self?.state = .processing("正在打包ZIP...") }
                 let zipPath = outputPath + ".zip"
                 try self?.createZip(from: outputPath, to: zipPath)
 
@@ -107,14 +111,28 @@ final class ScanViewModel: ObservableObject {
         state = .ready
     }
 
-    /// Find a previewable 3D model file in the export directory (USDZ > USDA > OBJ)
+    /// Find a previewable 3D model file in the export directory (USDZ > OBJ with texture > USDA > OBJ)
     func modelURL(for exportPath: String) -> URL? {
         let fm = FileManager.default
-        for name in ["model.usdz", "model.usda", "model.obj"] {
-            let path = (exportPath as NSString).appendingPathComponent(name)
-            if fm.fileExists(atPath: path) {
-                return URL(fileURLWithPath: path)
-            }
+        // Prefer USDZ (textured)
+        let usdzPath = (exportPath as NSString).appendingPathComponent("model.usdz")
+        if fm.fileExists(atPath: usdzPath) {
+            return URL(fileURLWithPath: usdzPath)
+        }
+        // OBJ with texture.jpg means textured mesh exists
+        let objPath = (exportPath as NSString).appendingPathComponent("model.obj")
+        let texPath = (exportPath as NSString).appendingPathComponent("texture.jpg")
+        if fm.fileExists(atPath: objPath) && fm.fileExists(atPath: texPath) {
+            return URL(fileURLWithPath: objPath)
+        }
+        // USDA fallback (untextured)
+        let usdaPath = (exportPath as NSString).appendingPathComponent("model.usda")
+        if fm.fileExists(atPath: usdaPath) {
+            return URL(fileURLWithPath: usdaPath)
+        }
+        // Plain OBJ fallback
+        if fm.fileExists(atPath: objPath) {
+            return URL(fileURLWithPath: objPath)
         }
         return nil
     }

@@ -27,7 +27,8 @@
     }
   ],
   "relatedPackages": {},
-  "externalDependencies": {
-    "Microsoft.Data.Sqlite": "8.0.8"
+  "dependencies": {
+    "com.unity.xr.arfoundation": "6.0.0",
+    "com.gilzoide.sqlite-net": "1.3.2"
   }
 }

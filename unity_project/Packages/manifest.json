@@ -4,6 +4,7 @@
   ],
   "dependencies": {
     "com.areatarget.tracking": "file:../../unity_plugin/AreaTargetPlugin",
+    "com.gilzoide.sqlite-net": "https://github.com/gilzoide/unity-sqlite-net.git#1.3.2",
     "com.unity.2d.sprite": "1.0.0",
     "com.unity.2d.tilemap": "1.0.0",
     "com.unity.ads": "4.16.4",
@@ -20,6 +21,7 @@
     "com.unity.xr.arfoundation": "6.3.3",
     "com.unity.xr.arkit": "6.3.3",
     "com.unity.xr.legacyinputhelpers": "2.1.13",
+    "com.unity.xr.openxr": "1.16.1",
     "com.unity.modules.accessibility": "1.0.0",
     "com.unity.modules.adaptiveperformance": "1.0.0",
     "com.unity.modules.ai": "1.0.0",

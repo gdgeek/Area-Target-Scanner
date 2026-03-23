@@ -4,7 +4,8 @@
   "references": [
     "AreaTargetPlugin.Runtime",
     "Unity.XR.ARFoundation",
-    "Unity.XR.ARSubsystems"
+    "Unity.XR.ARSubsystems",
+    "com.gilzoide.sqlite-net"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

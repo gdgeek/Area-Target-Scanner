@@ -20,7 +20,8 @@ final class TextureMappingPipeline {
         cameraPoses: [CameraPose],
         images: [CapturedImage],
         intrinsics: CameraIntrinsics,
-        atlasSize: Int = 4096
+        atlasSize: Int = 4096,
+        onProgress: ((String) -> Void)? = nil
     ) throws -> TexturedMeshResult {
         // 1. Validate inputs: throw noKeyframeData if cameraPoses or images are empty
         guard !cameraPoses.isEmpty, !images.isEmpty else {
@@ -28,10 +29,12 @@ final class TextureMappingPipeline {
         }
 
         // 2. Merge mesh anchors into a single unified mesh (throws noMeshData if empty)
+        onProgress?("正在合并网格 (\(meshAnchors.count) 个)...")
         let mergedMesh = try mergeMeshAnchors(meshAnchors)
         print("[TextureMappingPipeline] Merged mesh: \(mergedMesh.vertices.count) vertices, \(mergedMesh.faces.count) faces")
 
         // 3. UV unwrap the merged mesh
+        onProgress?("正在UV展开 (\(mergedMesh.vertices.count) 顶点, \(mergedMesh.faces.count) 面)...")
         let uvMesh = try UVUnwrapper().unwrap(
             vertices: mergedMesh.vertices,
             normals: mergedMesh.normals,
@@ -40,6 +43,7 @@ final class TextureMappingPipeline {
         print("[TextureMappingPipeline] UV mesh: \(uvMesh.vertices.count) vertices, \(uvMesh.faces.count) faces, \(uvMesh.uvCoordinates.count) UVs")
 
         // 4. Select the best camera frame for each face
+        onProgress?("正在分配纹理帧 (\(uvMesh.faces.count) 面, \(cameraPoses.count) 帧)...")
         let faceAssignments = TextureProjector().selectBestFrames(
             faces: uvMesh.faces,
             vertices: uvMesh.vertices,
@@ -51,6 +55,7 @@ final class TextureMappingPipeline {
         print("[TextureMappingPipeline] Frame assignments: \(faceAssignments.count) total, \(assignedWithScore) with positive score")
 
         // 5. Render the texture atlas
+        onProgress?("正在渲染纹理图集 (\(atlasSize)×\(atlasSize))...")
         let atlasImage = try TextureAtlasRenderer().renderAtlas(
             uvMesh: uvMesh,
             faceAssignments: faceAssignments,
