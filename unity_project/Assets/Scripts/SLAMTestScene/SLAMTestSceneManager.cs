@@ -120,24 +120,60 @@ public class SLAMTestSceneManager : MonoBehaviour
         if (File.Exists(_loader.FeatureDbPath))
             log.Add($"FeatureDB大小: {new FileInfo(_loader.FeatureDbPath).Length}B");
 
+        // 先直接测试 SQLite 连接
+        try
+        {
+            var connStr = $"Data Source={_loader.FeatureDbPath}";
+            log.Add($"SQLite连接: {connStr}");
+            using (var testConn = new Microsoft.Data.Sqlite.SqliteConnection(connStr))
+            {
+                testConn.Open();
+                log.Add($"SQLite Open: OK");
+                var cmd = testConn.CreateCommand();
+                cmd.CommandText = "SELECT COUNT(*) FROM keyframes";
+                var count = cmd.ExecuteScalar();
+                log.Add($"keyframes行数: {count}");
+                cmd.CommandText = "SELECT COUNT(*) FROM vocabulary";
+                count = cmd.ExecuteScalar();
+                log.Add($"vocabulary行数: {count}");
+                cmd.CommandText = "SELECT COUNT(*) FROM features";
+                count = cmd.ExecuteScalar();
+                log.Add($"features行数: {count}");
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Add($"SQLite异常: {ex.GetType().Name}");
+            log.Add($"  {ex.Message}");
+            if (ex.InnerException != null)
+            {
+                log.Add($"  Inner: {ex.InnerException.GetType().Name}");
+                log.Add($"  {ex.InnerException.Message}");
+            }
+            debugPanel?.SetStatus(string.Join("\n", log), Color.red);
+            return;
+        }
+
+        // 用 FeatureDatabaseReader 正式加载
         FeatureDatabaseReader featureDb = null;
         try
         {
             featureDb = new FeatureDatabaseReader();
             bool dbOk = featureDb.Load(_loader.FeatureDbPath);
-            log.Add($"FeatureDB加载: {(dbOk ? "OK" : "FAIL")}");
+            log.Add($"FeatureDB: {(dbOk ? "OK" : "FAIL")}");
             if (!dbOk)
             {
                 debugPanel?.SetStatus(string.Join("\n", log), Color.red);
                 return;
             }
-            log.Add($"  关键帧: {featureDb.KeyframeCount}");
-            log.Add($"  词汇量: {featureDb.Vocabulary.Count}");
+            log.Add($"  KF:{featureDb.KeyframeCount} Vocab:{featureDb.Vocabulary.Count}");
         }
         catch (Exception ex)
         {
             log.Add($"FeatureDB异常: {ex.GetType().Name}");
             log.Add($"  {ex.Message}");
+            if (ex.InnerException != null)
+                log.Add($"  Inner: {ex.InnerException.Message}");
             debugPanel?.SetStatus(string.Join("\n", log), Color.red);
             return;
         }
