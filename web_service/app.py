@@ -81,7 +81,7 @@ def safe_extract(zf, extract_dir, max_size=500 * 1024 * 1024):
 
 
 
-def run_pipeline(job_id, zip_path):
+def run_pipeline(job_id, zip_path, uv_unwrap=False):
     """Run the optimized pipeline in a background thread."""
     extract_dir = os.path.join(UPLOAD_DIR, job_id, "extracted")
     output_dir = os.path.join(OUTPUT_DIR, job_id)
@@ -98,6 +98,13 @@ def run_pipeline(job_id, zip_path):
         if scan_root is None:
             _update_job(job_id, status="failed", error="ZIP 中未找到 model.obj 和 poses.json")
             return
+
+        # Optional: UV unwrap (xatlas re-unwrap + texture re-projection)
+        if uv_unwrap:
+            _update_job(job_id, status="processing", step="0/4 UV 纹理展开 (xatlas)", progress=8)
+            from processing_pipeline.uv_unwrap import uv_unwrap_scan
+            uv_stats = uv_unwrap_scan(scan_root)
+            _update_job(job_id, progress=12)
 
         from processing_pipeline.optimized_pipeline import OptimizedPipeline
 
@@ -183,6 +190,9 @@ def upload():
         os.rmdir(job_dir)
         return jsonify({"error": "上传的文件不是有效的 ZIP 格式"}), 400
 
+    # 读取 UV 展开选项
+    uv_unwrap = request.form.get("uv_unwrap", "0") == "1"
+
     jobs[job_id] = {
         "id": job_id,
         "status": "queued",
@@ -190,11 +200,12 @@ def upload():
         "progress": 0,
         "error": None,
         "result_zip": None,
+        "uv_unwrap": uv_unwrap,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "finished_at": None,
     }
 
-    t = threading.Thread(target=run_pipeline, args=(job_id, zip_path), daemon=True)
+    t = threading.Thread(target=run_pipeline, args=(job_id, zip_path, uv_unwrap), daemon=True)
     t.start()
 
     return jsonify({"job_id": job_id})
