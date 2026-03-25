@@ -24,11 +24,22 @@ final class TextureProjector {
         var assignments: [FaceFrameAssignment] = []
         assignments.reserveCapacity(faces.count)
 
-        // Pre-compute which frames to skip (identity matrix = no valid pose)
-        let skipMask = cameraPoses.map { isIdentityTransform($0.transform) }
+        // Pre-compute which frames to skip:
+        // 1. Identity matrix = no valid pose (ARKit not yet tracking)
+        // 2. Near-origin translation = camera hasn't moved yet (e.g. frame_0000
+        //    with rotation but translation ≈ 0; isIdentityTransform misses this
+        //    because the rotation part differs, but distance ≈ 0 causes
+        //    score = dot/dist² to explode to ~10^16, monopolizing all visible faces)
+        let skipMask = cameraPoses.map { pose -> Bool in
+            if isIdentityTransform(pose.transform) { return true }
+            let t = pose.transform
+            let tx = t[12], ty = t[13], tz = t[14]
+            let translationLen = sqrt(tx * tx + ty * ty + tz * tz)
+            return translationLen < 0.01 // skip frames within 1cm of origin
+        }
         let skippedCount = skipMask.filter { $0 }.count
         if skippedCount > 0 {
-            print("[TextureProjector] Skipping \(skippedCount) identity-pose frame(s)")
+            print("[TextureProjector] Skipping \(skippedCount) identity/near-origin frame(s)")
         }
 
         for faceIdx in 0..<faces.count {
@@ -76,8 +87,10 @@ final class TextureProjector {
                     continue
                 }
 
-                // Score: dot / distance²
-                let score = dotProduct / (distance * distance)
+                // Score: dot / distance (linear decay)
+                // Previously dot/dist² caused near-origin frames to monopolize
+                // faces due to 1/dist² exploding at small distances.
+                let score = dotProduct / distance
 
                 if score > bestScore {
                     bestScore = score

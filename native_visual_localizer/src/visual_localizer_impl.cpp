@@ -4,6 +4,7 @@
 #include <cmath>
 #include <climits>
 #include <numeric>
+#include <unordered_map>
 
 // ---------------------------------------------------------------------------
 // Helper: create a LOST VLResult with identity pose
@@ -121,10 +122,15 @@ VLResult VisualLocalizer::processFrame(const unsigned char* image_data,
     cv::Mat gray(height, width, CV_8UC1,
                  const_cast<unsigned char*>(image_data));
 
+    // Step 1.5: CLAHE preprocessing — reduce cross-session lighting differences
+    cv::Mat enhanced;
+    auto clahe = cv::createCLAHE(2.0, cv::Size(8, 8));
+    clahe->apply(gray, enhanced);
+
     // Step 2: ORB detect + compute
     std::vector<cv::KeyPoint> keypoints;
     cv::Mat descriptors;
-    orb_->detectAndCompute(gray, cv::noArray(), keypoints, descriptors);
+    orb_->detectAndCompute(enhanced, cv::noArray(), keypoints, descriptors);
 
     last_debug_info_.orb_keypoints = static_cast<int>(keypoints.size());
 
@@ -171,6 +177,9 @@ VLResult VisualLocalizer::processFrame(const unsigned char* image_data,
     last_debug_info_.best_raw_matches = best_raw;
     last_debug_info_.best_good_matches = best_good;
     last_debug_info_.best_inliers = best_inliers;
+    last_debug_info_.best_inlier_ratio = (best_good > 0)
+        ? static_cast<float>(best_inliers) / static_cast<float>(best_good)
+        : 0.0f;
 
     return best;
 }
@@ -217,6 +226,30 @@ VLResult VisualLocalizer::tryMatchKeyframe(const KeyframeData& kf,
         }
     }
 
+    // Cross-check: reverse match (db→query) to filter many-to-one errors
+    {
+        std::vector<std::vector<cv::DMatch>> reverse_knn;
+        matcher_->knnMatch(kf.descriptors, query_desc, reverse_knn, 2);
+
+        // Build reverse match map: for each db descriptor, what query descriptor does it best match to?
+        std::unordered_map<int, int> reverse_map; // db_idx -> query_idx
+        for (const auto& m : reverse_knn) {
+            if (m.size() >= 2 && m[0].distance < kLoweRatio * m[1].distance) {
+                reverse_map[m[0].queryIdx] = m[0].trainIdx;
+            }
+        }
+
+        // Keep only bidirectionally consistent matches
+        std::vector<cv::DMatch> cross_checked;
+        for (const auto& match : good_matches) {
+            auto it = reverse_map.find(match.trainIdx);
+            if (it != reverse_map.end() && it->second == match.queryIdx) {
+                cross_checked.push_back(match);
+            }
+        }
+        good_matches = std::move(cross_checked);
+    }
+
     if (static_cast<int>(good_matches.size()) < kMinGoodMatches)
         return lost;
 
@@ -254,6 +287,14 @@ VLResult VisualLocalizer::tryMatchKeyframe(const KeyframeData& kf,
     int inlier_count = inliers.rows;
     if (inlier_count < kMinInlierCount)
         return lost;
+
+    // Inlier ratio quality gate: reject if too few inliers relative to matches
+    int good_count = static_cast<int>(good_matches.size());
+    if (good_count > 0) {
+        float inlier_ratio = static_cast<float>(inlier_count) / static_cast<float>(good_count);
+        if (inlier_ratio < kMinInlierRatio)
+            return lost;
+    }
 
     // Compose pose matrix from rvec/tvec via Rodrigues
     // solvePnPRansac returns world-to-camera extrinsic [R|t] in OpenCV
@@ -422,6 +463,11 @@ std::vector<KeyframeData*> VisualLocalizer::getGlobalCandidates(
               [](const Candidate& a, const Candidate& b) {
                   return a.similarity > b.similarity;
               });
+
+    // Filter out candidates below minimum BoW similarity threshold
+    while (!scored.empty() && scored.back().similarity < kMinBoWSimilarity) {
+        scored.pop_back();
+    }
 
     // Return top-K
     std::vector<KeyframeData*> result;

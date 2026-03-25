@@ -4,7 +4,8 @@
   "references": [
     "AreaTargetPlugin.Runtime",
     "AreaTargetTest",
-    "Unity.XR.ARFoundation"
+    "Unity.XR.ARFoundation",
+    "VideoPlaybackTestScene"
   ],
   "includePlatforms": [
     "Editor"

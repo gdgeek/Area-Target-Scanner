@@ -22,11 +22,16 @@ public class SLAMDebugPanel : MonoBehaviour
 
     private void AddBackground(Text txt)
     {
-        if (txt == null) return;
+        if (txt == null || txt.gameObject == null) return;
         var go = txt.gameObject;
         var img = go.GetComponent<Image>();
-        if (img == null) img = go.AddComponent<Image>();
-        img.color = new Color(0, 0, 0, 0.75f);
+        if (img == null)
+        {
+            // Canvas 下才能添加 Image，先检查
+            if (go.GetComponentInParent<Canvas>() == null) return;
+            img = go.AddComponent<Image>();
+        }
+        if (img != null) img.color = new Color(0, 0, 0, 0.75f);
         // 确保文字字号足够大
         if (txt.fontSize < 28) txt.fontSize = 28;
     }

@@ -48,19 +48,21 @@ private:
     VLDebugInfo last_debug_info_ = {};
 
     // Algorithm parameters — balanced for real-world AR
-    static constexpr int kOrbNFeatures = 1500;
-    static constexpr int kMinFeatureCount = 10;
-    static constexpr float kLoweRatio = 0.82f;        // 0.78太紧, 0.85太松
-    static constexpr int kMinGoodMatches = 10;         // 15太紧, 8太松
-    static constexpr int kPnpIterations = 200;
-    static constexpr float kPnpReprojError = 10.0f;    // 8太紧, 12太松
+    static constexpr int kOrbNFeatures = 3000;          // 2000→3000: 提取更多特征点，增加跨 session 匹配机会
+    static constexpr int kMinFeatureCount = 8;          // 10→8: 降低最低特征点门槛
+    static constexpr float kLoweRatio = 0.75f;          // 0.85→0.75: 收紧 ratio test，减少跨 session ambiguous matches
+    static constexpr int kMinGoodMatches = 8;           // 10→8: 降低好匹配数门槛
+    static constexpr int kPnpIterations = 300;          // 200→300: 更多 RANSAC 迭代，提高找到好解的概率
+    static constexpr float kPnpReprojError = 12.0f;     // 10→12: 放宽重投影误差容忍度
     static constexpr double kPnpConfidence = 0.99;
-    static constexpr int kMinInlierCount = 10;         // 15太紧, 8太松
-    static constexpr float kMaxConfidenceDivisor = 60.0f;
-    static constexpr float kNearbyRadius = 10.0f;     // was 5.0: wider search radius
-    static constexpr int kMaxNearbyKeyframes = 10;    // was 5: check more candidates
-    static constexpr int kGlobalTopK = 20;            // was 10: more BoW candidates
-    static constexpr int kAbsoluteDistThreshold = 64;  // Hamming distance fallback threshold (max 256)
+    static constexpr int kMinInlierCount = 8;           // 10→8: 降低 inlier 门槛
+    static constexpr float kMaxConfidenceDivisor = 50.0f; // 60→50: 同样 inlier 数得到更高 confidence
+    static constexpr float kNearbyRadius = 15.0f;       // 10→15: 更大的附近搜索半径
+    static constexpr int kMaxNearbyKeyframes = 15;      // 10→15: 检查更多候选关键帧
+    static constexpr int kGlobalTopK = 30;              // 20→30: 更多 BoW 候选关键帧
+    static constexpr int kAbsoluteDistThreshold = 60;   // 72→60: 收紧 Hamming 距离回退阈值
+    static constexpr float kMinInlierRatio = 0.15f;     // NEW: PnP 结果质量门控（inlier_ratio < 15% 时拒绝）
+    static constexpr float kMinBoWSimilarity = 0.05f;   // NEW: BoW 候选最低相似度过滤
 
     // Internal methods
     std::vector<float> computeBoW(const cv::Mat& descriptors);

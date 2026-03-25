@@ -13,12 +13,14 @@ final class ScanViewModel: ObservableObject {
         case processing(String) // status message
         case preview(String)    // export directory path
         case error(String)
+        case history            // 扫描历史列表
     }
 
     @Published var state: State = .requestingPermission
     @Published var progress = ScanProgress(
         pointCount: 0, coverageArea: 0, keyframeCount: 0, isScanning: false
     )
+    @Published var scanHistory: [ScanHistoryItem] = []
 
     private let scanner = ARKitScannerService()
     private let scannerQueue = DispatchQueue(label: "com.areatarget.scanner.vm")
@@ -214,5 +216,95 @@ final class ScanViewModel: ObservableObject {
             throw NSError(domain: "ScanExport", code: -1,
                           userInfo: [NSLocalizedDescriptionKey: "创建 zip 文件失败"])
         }
+    }
+
+    // MARK: - Scan History
+
+    /// 加载 Documents 目录下所有 scan_ 开头的扫描记录
+    func loadScanHistory() {
+        let fm = FileManager.default
+        guard let docsURL = fm.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let docsPath = docsURL.path
+
+        guard let contents = try? fm.contentsOfDirectory(atPath: docsPath) else { return }
+
+        let displayFormatter = DateFormatter()
+        displayFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+
+        var items: [ScanHistoryItem] = []
+        for name in contents {
+            guard name.hasPrefix("scan_"),
+                  let date = ScanHistoryItem.parseDate(from: name) else { continue }
+
+            let dirPath = (docsPath as NSString).appendingPathComponent(name)
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: dirPath, isDirectory: &isDir), isDir.boolValue else { continue }
+
+            var item = ScanHistoryItem(
+                id: name,
+                directoryPath: dirPath,
+                date: date,
+                formattedDate: displayFormatter.string(from: date)
+            )
+
+            // 读取元数据
+            if let files = try? fm.contentsOfDirectory(atPath: dirPath) {
+                item.fileCount = files.count
+                item.hasTexture = files.contains("texture.jpg")
+
+                // 统计关键帧数
+                let imagesDir = (dirPath as NSString).appendingPathComponent("images")
+                if let imgFiles = try? fm.contentsOfDirectory(atPath: imagesDir) {
+                    item.keyframeCount = imgFiles.filter { $0.hasSuffix(".jpg") }.count
+                }
+            }
+
+            // 检查 ZIP
+            let zipPath = dirPath + ".zip"
+            item.hasZip = fm.fileExists(atPath: zipPath)
+
+            // 计算总大小（目录 + zip）
+            item.totalSizeMB = Self.directorySize(path: dirPath, fm: fm) / (1024 * 1024)
+            if item.hasZip, let zipAttrs = try? fm.attributesOfItem(atPath: zipPath) {
+                let zipSize = (zipAttrs[.size] as? Double) ?? 0
+                item.totalSizeMB += zipSize / (1024 * 1024)
+            }
+
+            items.append(item)
+        }
+
+        scanHistory = items.sorted()
+    }
+
+    /// 删除一条扫描记录（目录 + ZIP）
+    func deleteScan(_ item: ScanHistoryItem) {
+        let fm = FileManager.default
+        try? fm.removeItem(atPath: item.directoryPath)
+        let zipPath = item.directoryPath + ".zip"
+        if fm.fileExists(atPath: zipPath) {
+            try? fm.removeItem(atPath: zipPath)
+        }
+        scanHistory.removeAll { $0.id == item.id }
+    }
+
+    /// 显示历史列表
+    func showHistory() {
+        loadScanHistory()
+        state = .history
+    }
+
+    // MARK: - Size Calculation
+
+    private static func directorySize(path: String, fm: FileManager) -> Double {
+        guard let enumerator = fm.enumerator(atPath: path) else { return 0 }
+        var total: Double = 0
+        while let file = enumerator.nextObject() as? String {
+            let fullPath = (path as NSString).appendingPathComponent(file)
+            if let attrs = try? fm.attributesOfItem(atPath: fullPath),
+               let size = attrs[.size] as? Double {
+                total += size
+            }
+        }
+        return total
     }
 }

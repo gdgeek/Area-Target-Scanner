@@ -5,6 +5,7 @@ using System.IO;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.XR.ARFoundation;
@@ -99,19 +100,21 @@ public class SLAMTestSceneManager : MonoBehaviour
         }
         debugPanel?.SetStatus($"AR就绪 state={ARSession.state}", Color.green);
         yield return new WaitForSeconds(0.3f);
-        InitializeTracking();
+        // 异步初始化，不阻塞主线程
+        _ = InitializeTrackingAsync();
     }
 
     /// <summary>
-    /// 逐步初始化，每一步都显示详细结果。
-    /// 不调用 _tracker.Initialize()，而是手动执行每个子步骤。
+    /// 异步初始化：耗时的 IO/计算在后台线程执行，UI 更新回主线程。
     /// </summary>
-    private void InitializeTracking()
+    private async Task InitializeTrackingAsync()
     {
         string assetPath = Path.Combine(Application.streamingAssetsPath, assetSubPath);
         var log = new List<string>();
 
-        // Step 1: 检查路径
+        debugPanel?.SetStatus("初始化中...", Color.yellow);
+
+        // Step 1: 检查路径（快，主线程）
         log.Add($"路径: {assetPath}");
         bool pathExists = Directory.Exists(assetPath);
         log.Add($"存在: {pathExists}");
@@ -137,7 +140,7 @@ public class SLAMTestSceneManager : MonoBehaviour
             return;
         }
 
-        // Step 2: 加载资产包 (manifest.json 验证)
+        // Step 2: 加载资产包 manifest（快，主线程）
         _loader = new AssetBundleLoader();
         bool loadOk = _loader.Load(assetPath);
         log.Add($"资产包: {(loadOk ? "OK" : "FAIL")}");
@@ -150,122 +153,49 @@ public class SLAMTestSceneManager : MonoBehaviour
         var m = _loader.Manifest;
         log.Add($"  {m.name} v{m.version} KF:{m.keyframeCount}");
         debugPanel?.SetAssetInfo(m.name, m.version, m.keyframeCount);
+        debugPanel?.SetStatus("加载特征数据库...", Color.yellow);
 
-        // Step 3: 加载 FeatureDB (SQLite)
-        log.Add($"FeatureDB路径: {_loader.FeatureDbPath}");
-        log.Add($"FeatureDB存在: {File.Exists(_loader.FeatureDbPath)}");
-        if (File.Exists(_loader.FeatureDbPath))
-            log.Add($"FeatureDB大小: {new FileInfo(_loader.FeatureDbPath).Length}B");
+        // Step 3: 后台线程执行耗时初始化（FeatureDB + native localizer）
+        string trackerAssetPath = assetPath;
+        AreaTargetTracker tracker = null;
+        string initError = null;
+        var bgLog = new List<string>();
 
-        // 先直接测试 SQLite 连接
-        try
+        await Task.Run(() =>
         {
-            log.Add($"SQLite连接: {_loader.FeatureDbPath}");
-            using (var testConn = new SQLite.SQLiteConnection(_loader.FeatureDbPath, SQLite.SQLiteOpenFlags.ReadOnly))
+            try
             {
-                log.Add($"SQLite Open: OK");
-                var count = testConn.ExecuteScalar<int>("SELECT COUNT(*) FROM keyframes");
-                log.Add($"keyframes行数: {count}");
-                count = testConn.ExecuteScalar<int>("SELECT COUNT(*) FROM vocabulary");
-                log.Add($"vocabulary行数: {count}");
-                count = testConn.ExecuteScalar<int>("SELECT COUNT(*) FROM features");
-                log.Add($"features行数: {count}");
-            }
-        }
-        catch (Exception ex)
-        {
-            log.Add($"SQLite异常: {ex.GetType().Name}");
-            log.Add($"  {ex.Message}");
-            if (ex.InnerException != null)
-            {
-                log.Add($"  Inner: {ex.InnerException.GetType().Name}");
-                log.Add($"  {ex.InnerException.Message}");
-            }
-            debugPanel?.SetStatus(string.Join("\n", log), Color.red);
-            return;
-        }
-
-        // 用 FeatureDatabaseReader 正式加载
-        FeatureDatabaseReader featureDb = null;
-        try
-        {
-            featureDb = new FeatureDatabaseReader();
-            bool dbOk = featureDb.Load(_loader.FeatureDbPath);
-            log.Add($"FeatureDB: {(dbOk ? "OK" : "FAIL")}");
-            if (!dbOk)
-            {
-                debugPanel?.SetStatus(string.Join("\n", log), Color.red);
-                return;
-            }
-            log.Add($"  KF:{featureDb.KeyframeCount} Vocab:{featureDb.Vocabulary.Count}");
-        }
-        catch (Exception ex)
-        {
-            log.Add($"FeatureDB异常: {ex.GetType().Name}");
-            log.Add($"  {ex.Message}");
-            if (ex.InnerException != null)
-                log.Add($"  Inner: {ex.InnerException.Message}");
-            debugPanel?.SetStatus(string.Join("\n", log), Color.red);
-            return;
-        }
-
-        // Step 4: 测试 native library (通过反射调用 internal API)
-        try
-        {
-            var bridgeType = typeof(AreaTargetTracker).Assembly.GetType("AreaTargetPlugin.NativeLocalizerBridge");
-            if (bridgeType != null)
-            {
-                var createMethod = bridgeType.GetMethod("vl_create",
-                    BindingFlags.Static | BindingFlags.NonPublic);
-                if (createMethod != null)
+                tracker = new AreaTargetTracker();
+                bool initOk = tracker.Initialize(trackerAssetPath);
+                bgLog.Add($"Tracker.Init: {(initOk ? "OK" : "FAIL")}");
+                if (!initOk)
                 {
-                    var handle = (IntPtr)createMethod.Invoke(null, null);
-                    log.Add($"vl_create: {(handle != IntPtr.Zero ? $"OK({handle})" : "NULL!")}");
-                    if (handle != IntPtr.Zero)
-                    {
-                        var destroyMethod = bridgeType.GetMethod("vl_destroy",
-                            BindingFlags.Static | BindingFlags.NonPublic);
-                        destroyMethod?.Invoke(null, new object[] { handle });
-                    }
-                }
-                else
-                {
-                    log.Add("vl_create方法未找到");
+                    initError = "Tracker 初始化失败";
+                    tracker.Dispose();
+                    tracker = null;
                 }
             }
-            else
+            catch (Exception ex)
             {
-                log.Add("NativeLocalizerBridge类型未找到!");
+                bgLog.Add($"Tracker.Init异常: {ex.GetType().Name}");
+                bgLog.Add($"  {ex.Message}");
+                initError = ex.Message;
+                tracker?.Dispose();
+                tracker = null;
             }
-        }
-        catch (Exception ex)
-        {
-            var inner = ex.InnerException ?? ex;
-            log.Add($"Native异常: {inner.GetType().Name}");
-            log.Add($"  {inner.Message}");
-        }
+        });
 
-        // Step 5: 用 AreaTargetTracker 正式初始化
-        _tracker = new AreaTargetTracker();
-        bool initOk = false;
-        try
-        {
-            initOk = _tracker.Initialize(assetPath);
-            log.Add($"Tracker.Init: {(initOk ? "OK" : "FAIL")}");
-        }
-        catch (Exception ex)
-        {
-            log.Add($"Tracker.Init异常: {ex.GetType().Name}");
-            log.Add($"  {ex.Message}");
-        }
+        // 回到主线程
+        log.AddRange(bgLog);
 
-        if (!initOk)
+        if (tracker == null)
         {
+            log.Add(initError ?? "未知错误");
             debugPanel?.SetStatus(string.Join("\n", log), Color.red);
-            _tracker?.Dispose();
-            _tracker = null;
             return;
         }
+
+        _tracker = tracker;
 
         // Step 6: 订阅帧
         if (arCameraManager != null)
@@ -665,15 +595,43 @@ public class SLAMTestSceneManager : MonoBehaviour
                 }
             }
 
-            // 不替换材质 — 保持 glTFast 默认（品红色但可见），等位置确认正确后再处理
+            // 红色线框模式：把三角形 mesh 转成线段，用内置 shader 避免 URP 兼容问题
+            var meshFiltersForWire = _glbModelObj.GetComponentsInChildren<MeshFilter>();
+            foreach (var mf in meshFiltersForWire)
+            {
+                if (mf.sharedMesh == null) continue;
+                var srcMesh = mf.sharedMesh;
+                var tris = srcMesh.triangles;
+                var verts = srcMesh.vertices;
+
+                // 构建线段索引：每个三角形 3 条边
+                var lineIndices = new List<int>(tris.Length * 2);
+                for (int ti = 0; ti < tris.Length; ti += 3)
+                {
+                    lineIndices.Add(tris[ti]);     lineIndices.Add(tris[ti + 1]);
+                    lineIndices.Add(tris[ti + 1]); lineIndices.Add(tris[ti + 2]);
+                    lineIndices.Add(tris[ti + 2]); lineIndices.Add(tris[ti]);
+                }
+
+                var wireMesh = new Mesh();
+                wireMesh.name = srcMesh.name + "_wire";
+                wireMesh.vertices = verts;
+                wireMesh.SetIndices(lineIndices.ToArray(), MeshTopology.Lines, 0);
+                mf.sharedMesh = wireMesh;
+
+                Debug.Log($"[GLB_WIRE] '{mf.gameObject.name}' → {verts.Length} verts, {lineIndices.Count / 2} lines");
+            }
+
+            // 红色线框材质（Sprites/Default 内置 shader，不依赖 URP）
+            var wireShader = Shader.Find("Sprites/Default");
+            if (wireShader == null) wireShader = Shader.Find("UI/Default");
+            var wireMat = new Material(wireShader);
+            wireMat.color = new Color(1f, 0f, 0f, 1f); // 不透明红色
+
             var renderers = _glbModelObj.GetComponentsInChildren<Renderer>();
             foreach (var r in renderers)
             {
-                foreach (var mat in r.materials)
-                {
-                    string shaderName = mat?.shader?.name ?? "NULL";
-                    Debug.Log($"[GLB_DIAG] renderer='{r.gameObject.name}' shader='{shaderName}'");
-                }
+                r.materials = new Material[] { wireMat };
             }
 
             _glbLoaded = true;
@@ -816,8 +774,8 @@ public class SLAMTestSceneManager : MonoBehaviour
         bool behind = vp.z < 0;
         bool onScreen = !behind && vp.x > 0.05f && vp.x < 0.95f && vp.y > 0.05f && vp.y < 0.95f;
 
-        float sw = Screen.width;
-        float sh = Screen.height;
+        float sw2 = Screen.width;
+        float sh2 = Screen.height;
 
         if (_arrowTex == null)
         {
@@ -832,8 +790,8 @@ public class SLAMTestSceneManager : MonoBehaviour
         if (onScreen)
         {
             // 立方体在屏幕内：在它上方画一个向下的三角箭头
-            float sx = vp.x * sw;
-            float sy = (1f - vp.y) * sh; // GUI Y 轴反转
+            float sx = vp.x * sw2;
+            float sy = (1f - vp.y) * sh2; // GUI Y 轴反转
             DrawArrowAt(sx, sy - 60f, 0f, 40f, arrowColor); // 箭头朝下，在立方体上方
             // 距离标签
             float dist = Vector3.Distance(cam.transform.position, worldPos);
@@ -849,8 +807,8 @@ public class SLAMTestSceneManager : MonoBehaviour
         else
         {
             // 立方体在屏幕外或后面：箭头贴在屏幕边缘
-            float cx = sw / 2f;
-            float cy = sh / 2f;
+            float cx = sw2 / 2f;
+            float cy = sh2 / 2f;
 
             // 如果在后面，翻转方向
             float dx = vp.x - 0.5f;
@@ -861,11 +819,11 @@ public class SLAMTestSceneManager : MonoBehaviour
             float margin = 60f;
 
             // 沿方向射线与屏幕边缘求交
-            float ex = cx + Mathf.Cos(angle) * sw;
-            float ey = cy - Mathf.Sin(angle) * sh; // GUI Y反转
+            float ex = cx + Mathf.Cos(angle) * sw2;
+            float ey = cy - Mathf.Sin(angle) * sh2; // GUI Y反转
             // 裁剪到屏幕边缘
-            ex = Mathf.Clamp(ex, margin, sw - margin);
-            ey = Mathf.Clamp(ey, margin, sh - margin);
+            ex = Mathf.Clamp(ex, margin, sw2 - margin);
+            ey = Mathf.Clamp(ey, margin, sh2 - margin);
 
             float guiAngle = -angle * Mathf.Rad2Deg;
             DrawArrowAt(ex, ey, guiAngle, 50f, arrowColor);

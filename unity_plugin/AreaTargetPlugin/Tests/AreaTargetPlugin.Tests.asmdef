@@ -4,7 +4,8 @@
   "references": [
     "AreaTargetPlugin.Runtime",
     "AreaTargetTest",
-    "Gilzoide.SqliteNet"
+    "Gilzoide.SqliteNet",
+    "VideoPlaybackTestScene"
   ],
   "includePlatforms": [
     "Editor"

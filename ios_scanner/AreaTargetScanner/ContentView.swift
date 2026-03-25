@@ -46,6 +46,8 @@ struct ContentView: View {
                 previewView(exportPath: path)
             case .error(let message):
                 errorView(message: message)
+            case .history:
+                ScanHistoryView(viewModel: viewModel)
             }
         }
         .onAppear { viewModel.checkCameraPermission() }
@@ -89,11 +91,19 @@ struct ContentView: View {
             Text("Area Target Scanner").font(.largeTitle.weight(.semibold)).foregroundStyle(.white)
             Text("v6 — 纹理采样修复版").font(.body).foregroundStyle(.white.opacity(0.6))
             Spacer()
-            Button(action: { viewModel.startScanning() }) {
-                Label("开始扫描", systemImage: "record.circle")
-                    .font(.title3.weight(.semibold))
-                    .frame(maxWidth: .infinity).padding(.vertical, 14)
-            }.buttonStyle(.borderedProminent).tint(.red)
+            VStack(spacing: 12) {
+                Button(action: { viewModel.startScanning() }) {
+                    Label("开始扫描", systemImage: "record.circle")
+                        .font(.title3.weight(.semibold))
+                        .frame(maxWidth: .infinity).padding(.vertical, 14)
+                }.buttonStyle(.borderedProminent).tint(.red)
+
+                Button(action: { viewModel.showHistory() }) {
+                    Label("扫描历史", systemImage: "clock.arrow.circlepath")
+                        .font(.title3.weight(.semibold))
+                        .frame(maxWidth: .infinity).padding(.vertical, 14)
+                }.buttonStyle(.bordered).tint(.white)
+            }
             .padding(.horizontal, 40).padding(.bottom, 40)
         }
     }

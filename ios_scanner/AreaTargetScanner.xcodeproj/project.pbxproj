@@ -36,6 +36,8 @@ A10017 /* GLBExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1001
 		A10030 /* xatlas.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B10030 /* xatlas.cpp */; };
 		A10031 /* XAtlasBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = B10031 /* XAtlasBridge.mm */; };
 		A10040 /* ModelPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10040 /* ModelPreviewView.swift */; };
+		A10041 /* ScanHistoryItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10041 /* ScanHistoryItem.swift */; };
+		A10042 /* ScanHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10042 /* ScanHistoryView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -82,6 +84,8 @@ B10017 /* GLBExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = so
 		B10032 /* XAtlasBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = XAtlasBridge.h; sourceTree = "<group>"; };
 		B10033 /* AreaTargetScanner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "AreaTargetScanner-Bridging-Header.h"; sourceTree = "<group>"; };
 		B10040 /* ModelPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPreviewView.swift; sourceTree = "<group>"; };
+		B10041 /* ScanHistoryItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanHistoryItem.swift; sourceTree = "<group>"; };
+		B10042 /* ScanHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanHistoryView.swift; sourceTree = "<group>"; };
 		F10001 /* AreaTargetScanner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AreaTargetScanner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F10002 /* AreaTargetScannerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AreaTargetScannerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -137,6 +141,7 @@ B10017 /* GLBExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = so
 				B10005 /* ScanProgress.swift */,
 				B10006 /* ScanResult.swift */,
 				B10018 /* TextureMappingModels.swift */,
+				B10041 /* ScanHistoryItem.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -164,6 +169,7 @@ B10017 /* GLBExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = so
 				B10011 /* ScanProgressView.swift */,
 				B10015 /* ARScanningView.swift */,
 				B10040 /* ModelPreviewView.swift */,
+				B10042 /* ScanHistoryView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -330,6 +336,8 @@ B10017 /* GLBExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = so
 				A10030 /* xatlas.cpp in Sources */,
 				A10031 /* XAtlasBridge.mm in Sources */,
 				A10040 /* ModelPreviewView.swift in Sources */,
+				A10041 /* ScanHistoryItem.swift in Sources */,
+				A10042 /* ScanHistoryView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

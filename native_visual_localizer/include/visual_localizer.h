@@ -35,6 +35,7 @@ typedef struct {
     int best_good_matches;   /* Good matches after Lowe ratio filter */
     int best_inliers;        /* PnP RANSAC inlier count */
     float best_bow_sim;      /* Best BoW similarity score */
+    float best_inlier_ratio; /* Best inlier ratio (inliers/good_matches) */
 } VLDebugInfo;
 
 /* Lifecycle */
