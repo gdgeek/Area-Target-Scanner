@@ -49,12 +49,18 @@ def build_feature_database(
     images: List[dict],
     mesh: o3d.geometry.TriangleMesh,
     intrinsics: dict | None = None,
+    extract_akaze: bool = True,
 ) -> FeatureDatabase:
     """Extract ORB features from keyframes and build a visual feature database.
 
     For each keyframe image, extracts up to 2000 ORB features, back-projects
     2D keypoints to 3D via ray-mesh intersection, and stores valid
     correspondences. Keyframes with fewer than 20 valid features are skipped.
+
+    When ``extract_akaze`` is True, additionally extracts AKAZE features for
+    each keyframe using ``cv2.AKAZE_create()``, and obtains 3D points via the
+    same ray-mesh intersection pipeline. AKAZE data is stored in the
+    KeyframeData's ``akaze_*`` fields.
 
     After processing all keyframes, builds a visual Bag-of-Words (BoW)
     vocabulary using K-Means clustering (K=min(1000, n_descriptors)) on all
@@ -67,6 +73,8 @@ def build_feature_database(
         mesh: Triangle mesh used for ray-casting.
         intrinsics: Optional dict with ``fx``, ``fy``, ``cx``, ``cy`` keys.
             If *None*, intrinsics are estimated from image dimensions.
+        extract_akaze: If True (default), additionally extract AKAZE features
+            for each keyframe and store in akaze_* fields.
 
     Returns:
         Populated feature database with keyframes, vocabulary (uint8 medoids),
@@ -80,8 +88,9 @@ def build_feature_database(
 
     logger = logging.getLogger(__name__)
 
-    # --- Step 1: Create ORB detector ---
+    # --- Step 1: Create ORB detector (+ AKAZE if requested) ---
     orb = cv2.ORB_create(nfeatures=2000)
+    akaze = cv2.AKAZE_create() if extract_akaze else None
 
     # --- Step 2: Prepare ray-casting scene from mesh ---
     scene = o3d.t.geometry.RaycastingScene()
@@ -194,6 +203,73 @@ def build_feature_database(
             "Image %d (%s): %d valid features added to database.",
             idx, img_path, len(valid_keypoints),
         )
+
+        # --- Step 2e: Extract AKAZE features (if requested) ---
+        if akaze is not None:
+            akaze_kps, akaze_descs = akaze.detectAndCompute(img_gray, None)
+
+            if akaze_descs is not None and len(akaze_kps) > 0:
+                # 构建 AKAZE 关键点的射线，复用相同的 intrinsics 和 pose
+                akaze_rays_list = []
+                for kp in akaze_kps:
+                    px, py = kp.pt
+                    x_cam = (px - cx) / fx
+                    y_cam = (py - cy) / fy
+                    dir_cam = np.array([x_cam, -y_cam, -1.0])
+                    dir_cam = dir_cam / np.linalg.norm(dir_cam)
+                    origin_world = t
+                    dir_world = R @ dir_cam
+                    akaze_rays_list.append([
+                        origin_world[0], origin_world[1], origin_world[2],
+                        dir_world[0], dir_world[1], dir_world[2],
+                    ])
+
+                akaze_rays_tensor = o3d.core.Tensor(
+                    np.array(akaze_rays_list, dtype=np.float32),
+                    dtype=o3d.core.float32,
+                )
+                akaze_result = scene.cast_rays(akaze_rays_tensor)
+                akaze_t_hit = akaze_result["t_hit"].numpy()
+
+                # 过滤有效交点的 AKAZE 特征
+                akaze_valid_kps: List[tuple[float, float]] = []
+                akaze_valid_descs: List[np.ndarray] = []
+                akaze_valid_pts3d: List[tuple[float, float, float]] = []
+
+                for j, kp in enumerate(akaze_kps):
+                    if np.isinf(akaze_t_hit[j]) or akaze_t_hit[j] <= 0:
+                        continue
+                    ray = np.array(akaze_rays_list[j], dtype=np.float64)
+                    origin = ray[:3]
+                    direction = ray[3:]
+                    hit_point = origin + akaze_t_hit[j] * direction
+
+                    akaze_valid_kps.append((kp.pt[0], kp.pt[1]))
+                    akaze_valid_descs.append(akaze_descs[j])
+                    akaze_valid_pts3d.append(
+                        (float(hit_point[0]), float(hit_point[1]), float(hit_point[2]))
+                    )
+
+                if akaze_valid_kps:
+                    keyframe.akaze_keypoints = akaze_valid_kps
+                    keyframe.akaze_descriptors = np.array(
+                        akaze_valid_descs, dtype=np.uint8
+                    )
+                    keyframe.akaze_points_3d = akaze_valid_pts3d
+                    logger.info(
+                        "Image %d (%s): %d valid AKAZE features extracted.",
+                        idx, img_path, len(akaze_valid_kps),
+                    )
+                else:
+                    logger.info(
+                        "Image %d (%s): no valid AKAZE features (all rays missed mesh).",
+                        idx, img_path,
+                    )
+            else:
+                logger.info(
+                    "Image %d (%s): AKAZE detected no features.",
+                    idx, img_path,
+                )
 
     logger.info(
         "Feature database built: %d keyframes out of %d images.",

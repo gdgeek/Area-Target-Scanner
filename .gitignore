@@ -48,3 +48,5 @@ build/
 # Build logs
 /tmp/unity_ios_build*.log
 /tmp/xcode_build*.log
+/debug
+/data

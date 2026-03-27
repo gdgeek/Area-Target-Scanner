@@ -128,6 +128,82 @@ def compute_alignment_transform(s2a_matrices):
     return AT
 
 
+def rescue_outlier_frames(results, AT):
+    """
+    离群帧救回：用已计算的 Alignment_Transform 反向验证被一致性过滤剔除的 pnp_outlier 帧。
+    对齐后 s2a_err_aligned < 0.5 的帧救回为 ok_rescued，否则保持 pnp_outlier。
+    救回后用所有成功帧（ok + ok_rescued）重新计算 AT，验证对齐精度未退化。
+
+    Args:
+        results: 定位结果列表（含 pnp_outlier 帧的 c2w 和 w2c_native）
+        AT: 4×4 Alignment_Transform
+    Returns:
+        new_AT: 重算后的 AT（若有救回帧），否则返回原 AT
+        rescued_count: 救回的帧数
+    """
+    RESCUE_THRESHOLD = 0.5
+
+    outliers = [r for r in results if r["status"] == "pnp_outlier"]
+    n_checked = len(outliers)
+    if n_checked == 0:
+        print(f"    救回统计: 无离群帧需要检查")
+        return AT, 0
+
+    rescued = []
+    for r in outliers:
+        s2a_aligned = AT @ r["c2w"] @ r["w2c_native"]
+        err = float(np.linalg.norm(s2a_aligned - np.eye(4)))
+        if err < RESCUE_THRESHOLD:
+            r["status"] = "ok_rescued"
+            r["s2a_err_aligned"] = err
+            # 计算对齐后旋转误差
+            R_aligned = s2a_aligned[:3, :3]
+            r["rot_err_aligned"] = float(np.degrees(np.arccos(
+                np.clip((np.trace(R_aligned) - 1) / 2, -1, 1))))
+            rescued.append(r)
+
+    rescued_count = len(rescued)
+    mean_rescued_err = np.mean([r["s2a_err_aligned"] for r in rescued]) if rescued else float("nan")
+    print(f"    救回统计: 检查 {n_checked} 帧, 救回 {rescued_count} 帧, "
+          f"救回帧平均 s2a_err_aligned={mean_rescued_err:.4f}")
+
+    # 救回后用所有成功帧（ok + ok_rescued）重新计算 AT
+    success_frames = [r for r in results if r["status"] in ("ok", "ok_rescued")]
+    if len(success_frames) >= 3:
+        s2a_matrices = [r["c2w"] @ r["w2c_native"] for r in success_frames]
+        new_AT = compute_alignment_transform(s2a_matrices)
+
+        # 验证重算后对齐精度未退化
+        errs_after = []
+        for r in success_frames:
+            s2a_aligned = new_AT @ r["c2w"] @ r["w2c_native"]
+            err = float(np.linalg.norm(s2a_aligned - np.eye(4)))
+            errs_after.append(err)
+        mean_err_after = np.mean(errs_after)
+
+        if mean_err_after < 0.2:
+            print(f"    重算 AT 后对齐精度: s2a_err 均值={mean_err_after:.4f} (< 0.2 ✅)")
+            # 用新 AT 更新所有成功帧的对齐误差
+            for r, err in zip(success_frames, errs_after):
+                r["s2a_err_aligned"] = err
+                s2a_aligned = new_AT @ r["c2w"] @ r["w2c_native"]
+                R_aligned = s2a_aligned[:3, :3]
+                r["rot_err_aligned"] = float(np.degrees(np.arccos(
+                    np.clip((np.trace(R_aligned) - 1) / 2, -1, 1))))
+            return new_AT, rescued_count
+        else:
+            print(f"    ⚠️ 重算 AT 后对齐精度退化: s2a_err 均值={mean_err_after:.4f} (>= 0.2)")
+            # 精度退化，回退救回操作
+            for r in rescued:
+                r["status"] = "pnp_outlier"
+                r.pop("s2a_err_aligned", None)
+                r.pop("rot_err_aligned", None)
+            print(f"    回退救回操作，保持原 AT")
+            return AT, 0
+
+    return AT, rescued_count
+
+
 def load_scan_data(scan_dir):
     """加载扫描数据（内参 + 帧列表）"""
     intrinsics = json.load(open(os.path.join(scan_dir, "intrinsics.json")))
@@ -146,9 +222,15 @@ def load_scan_data(scan_dir):
 
 
 def load_db_keyframes(db_path):
-    """从 features.db 加载所有 keyframe 数据"""
+    """从 features.db 加载所有 keyframe 数据（ORB + AKAZE）"""
     db = sqlite3.connect(db_path)
     rows = db.execute("SELECT id, pose FROM keyframes ORDER BY id").fetchall()
+
+    # 检查 akaze_features 表是否存在
+    has_akaze_table = db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='akaze_features'"
+    ).fetchone() is not None
+
     kfs = {}
     for row in rows:
         kf_id = row[0]
@@ -164,7 +246,25 @@ def load_db_keyframes(db_path):
         descs = np.array([
             np.frombuffer(f[5], dtype=np.uint8) for f in features
         ], dtype=np.uint8) if features else np.empty((0, 32), dtype=np.uint8)
-        kfs[kf_id] = {"c2w": pose, "pts2d": pts2d, "pts3d": pts3d, "descriptors": descs}
+
+        # AKAZE 数据（若表存在则加载）
+        akaze_pts2d, akaze_pts3d, akaze_descriptors = None, None, None
+        if has_akaze_table:
+            akaze_rows = db.execute(
+                "SELECT x, y, x3d, y3d, z3d, descriptor FROM akaze_features WHERE keyframe_id=?",
+                (kf_id,)).fetchall()
+            if akaze_rows:
+                akaze_pts2d = np.array([(f[0], f[1]) for f in akaze_rows], dtype=np.float32)
+                akaze_pts3d = np.array([(f[2], f[3], f[4]) for f in akaze_rows], dtype=np.float32)
+                akaze_descriptors = np.array([
+                    np.frombuffer(f[5], dtype=np.uint8) for f in akaze_rows
+                ], dtype=np.uint8)
+
+        kfs[kf_id] = {
+            "c2w": pose, "pts2d": pts2d, "pts3d": pts3d, "descriptors": descs,
+            "akaze_pts2d": akaze_pts2d, "akaze_pts3d": akaze_pts3d,
+            "akaze_descriptors": akaze_descriptors,
+        }
     db.close()
     return kfs
 
@@ -204,8 +304,102 @@ def generate_features_db(scan_dir, mesh_path, db_path):
         return False
 
 
+def _pnp_solve_and_refine(pts3d, pts2d, K):
+    """PnP RANSAC + iterative refinement，返回 (ok, w2c, n_matches, n_inliers, inlier_ratio) 或 None"""
+    n_matches = len(pts3d)
+    if n_matches < MIN_MATCHES_FOR_PNP:
+        return None
+
+    pts3d_arr = np.array(pts3d, dtype=np.float32)
+    pts2d_arr = np.array(pts2d, dtype=np.float32)
+
+    ok, rvec, tvec, inliers = cv2.solvePnPRansac(
+        pts3d_arr, pts2d_arr, K.astype(np.float32), None,
+        iterationsCount=PNP_ITERATIONS, reprojectionError=PNP_REPROJ_ERROR,
+        confidence=PNP_CONFIDENCE)
+
+    if not ok or inliers is None or len(inliers) < PNP_MIN_INLIERS:
+        n_inliers = 0 if inliers is None else len(inliers)
+        return ("pnp_failed", n_matches, n_inliers, 0.0)
+
+    n_inliers = len(inliers)
+    inlier_ratio = n_inliers / n_matches if n_matches > 0 else 0
+    if inlier_ratio < MIN_INLIER_RATIO:
+        return ("pnp_rejected", n_matches, n_inliers, inlier_ratio)
+
+    # PnP refinement: 用 RANSAC inlier 做 iterative PnP
+    inlier_idx = inliers.flatten()
+    pts3d_inlier = pts3d_arr[inlier_idx]
+    pts2d_inlier = pts2d_arr[inlier_idx]
+    ok_ref, rvec_ref, tvec_ref = cv2.solvePnP(
+        pts3d_inlier, pts2d_inlier, K.astype(np.float32), None,
+        rvec=rvec.copy(), tvec=tvec.copy(), useExtrinsicGuess=True,
+        flags=cv2.SOLVEPNP_ITERATIVE)
+    if ok_ref:
+        rvec, tvec = rvec_ref, tvec_ref
+
+    R, _ = cv2.Rodrigues(rvec)
+    flip = np.diag([1.0, -1.0, -1.0])
+    w2c = np.eye(4)
+    w2c[:3, :3] = flip @ R
+    w2c[:3, 3] = (flip @ tvec).flatten()
+
+    return ("ok", n_matches, n_inliers, inlier_ratio, w2c)
+
+
+def _match_and_aggregate(query_descs, query_kps, db_kfs, bf, desc_key="descriptors",
+                         pts3d_key="pts3d"):
+    """对 query 描述子与 DB keyframes 做 Lowe ratio + 交叉验证 + 多 KF 聚合，
+    返回 (agg_pts3d, agg_pts2d) 列表"""
+    # Score keyframes by forward Lowe ratio match count
+    kf_scores = []
+    for kf_id, kf in db_kfs.items():
+        kf_descs = kf.get(desc_key)
+        if kf_descs is None or len(kf_descs) < 10:
+            continue
+        try:
+            raw = bf.knnMatch(query_descs, kf_descs, k=2)
+        except cv2.error:
+            continue
+        good = [m for pair in raw if len(pair) == 2
+                and pair[0].distance < MATCH_RATIO_THRESH * pair[1].distance
+                for m in [pair[0]]]
+        kf_scores.append((kf_id, len(good), good))
+
+    kf_scores.sort(key=lambda x: x[1], reverse=True)
+
+    # 聚合 top-K keyframe 匹配 + cross-check
+    agg_pts3d, agg_pts2d = [], []
+    used = set()
+    for kf_id, score, good_matches in kf_scores[:MULTI_KF_TOP_K]:
+        if score < 5:
+            continue
+        kf = db_kfs[kf_id]
+        kf_descs = kf[desc_key]
+        kf_pts3d = kf[pts3d_key]
+        try:
+            rev = bf.knnMatch(kf_descs, query_descs, k=2)
+        except cv2.error:
+            continue
+        rev_map = {p[0].queryIdx: p[0].trainIdx for p in rev
+                   if len(p) == 2 and p[0].distance < MATCH_RATIO_THRESH * p[1].distance}
+        for m in good_matches:
+            q, t = m.queryIdx, m.trainIdx
+            if t not in rev_map or rev_map[t] != q:
+                continue
+            if q in used:
+                continue
+            if t < len(kf_pts3d):
+                agg_pts3d.append(kf_pts3d[t])
+                agg_pts2d.append(query_kps[q].pt)
+                used.add(q)
+
+    return agg_pts3d, agg_pts2d
+
+
 def run_localization(query_frames, query_intrinsics, db_kfs):
-    """对查询帧集合 vs DB keyframes 执行定位，返回结果列表"""
+    """对查询帧集合 vs DB keyframes 执行定位，返回结果列表。
+    ORB 失败帧会尝试 AKAZE fallback（若 DB 有 AKAZE 数据）。"""
     fx, fy = query_intrinsics["fx"], query_intrinsics["fy"]
     cx, cy = query_intrinsics["cx"], query_intrinsics["cy"]
     K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], dtype=np.float64)
@@ -213,6 +407,12 @@ def run_localization(query_frames, query_intrinsics, db_kfs):
     orb = cv2.ORB_create(nfeatures=ORB_FEATURES)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     bf = cv2.BFMatcher(cv2.NORM_HAMMING)
+
+    # 检查 DB 是否有 AKAZE 数据（在帧循环外只创建一次 AKAZE 检测器）
+    has_akaze_data = any(
+        kf.get("akaze_descriptors") is not None for kf in db_kfs.values()
+    )
+    akaze = cv2.AKAZE_create() if has_akaze_data else None
 
     results = []
     for frame in query_frames:
@@ -228,110 +428,95 @@ def run_localization(query_frames, query_intrinsics, db_kfs):
             results.append({"frame": frame["index"], "status": "few_features"})
             continue
 
-        # Score keyframes by forward Lowe ratio match count
-        kf_scores = []
-        for kf_id, kf in db_kfs.items():
-            if len(kf["descriptors"]) < 10:
-                continue
-            try:
-                raw = bf.knnMatch(descs, kf["descriptors"], k=2)
-            except cv2.error:
-                continue
-            good = [m for pair in raw if len(pair) == 2
-                    and pair[0].distance < MATCH_RATIO_THRESH * pair[1].distance
-                    for m in [pair[0]]]
-            kf_scores.append((kf_id, len(good), good))
+        # --- ORB 匹配 ---
+        agg_pts3d, agg_pts2d = _match_and_aggregate(
+            descs, kps, db_kfs, bf,
+            desc_key="descriptors", pts3d_key="pts3d")
 
-        kf_scores.sort(key=lambda x: x[1], reverse=True)
+        pnp_result = _pnp_solve_and_refine(agg_pts3d, agg_pts2d, K)
 
-        # 聚合 top-K keyframe 匹配 + cross-check
-        agg_pts3d, agg_pts2d_idx, used = [], [], set()
-        for kf_id, score, good_matches in kf_scores[:MULTI_KF_TOP_K]:
-            if score < 5:
-                continue
-            kf = db_kfs[kf_id]
-            try:
-                rev = bf.knnMatch(kf["descriptors"], descs, k=2)
-            except cv2.error:
-                continue
-            rev_map = {p[0].queryIdx: p[0].trainIdx for p in rev
-                       if len(p) == 2 and p[0].distance < MATCH_RATIO_THRESH * p[1].distance}
-            for m in good_matches:
-                q, t = m.queryIdx, m.trainIdx
-                if t not in rev_map or rev_map[t] != q:
+        # ORB 成功
+        if pnp_result is not None and pnp_result[0] == "ok":
+            _, n_matches, n_inliers, inlier_ratio, w2c = pnp_result
+            s2a = frame["c2w"] @ w2c
+            s2a_err = float(np.linalg.norm(s2a - np.eye(4)))
+            R_s2a = s2a[:3, :3]
+            rot_err = float(np.degrees(np.arccos(np.clip((np.trace(R_s2a) - 1) / 2, -1, 1))))
+            results.append({
+                "frame": frame["index"], "status": "ok", "method": "orb",
+                "n_matches": n_matches, "n_inliers": n_inliers,
+                "inlier_ratio": inlier_ratio,
+                "s2a_err": s2a_err, "rot_err": rot_err,
+                "w2c_native": w2c, "c2w": frame["c2w"],
+            })
+            continue
+
+        # ORB 失败 — 记录失败原因用于判断是否触发 AKAZE
+        if pnp_result is None:
+            orb_status = "few_matches"
+            orb_n_matches = len(agg_pts3d)
+            orb_n_inliers = 0
+            orb_inlier_ratio = 0.0
+        else:
+            orb_status = pnp_result[0]
+            orb_n_matches = pnp_result[1]
+            orb_n_inliers = pnp_result[2]
+            orb_inlier_ratio = pnp_result[3]
+
+        # --- AKAZE Fallback ---
+        # 仅对 ORB 失败帧（pnp_failed, few_matches, pnp_rejected）触发
+        if akaze is not None and orb_status in ("pnp_failed", "few_matches", "pnp_rejected"):
+            akaze_kps, akaze_descs = akaze.detectAndCompute(gray, None)
+            if akaze_descs is not None and len(akaze_kps) >= 10:
+                akaze_agg_pts3d, akaze_agg_pts2d = _match_and_aggregate(
+                    akaze_descs, akaze_kps, db_kfs, bf,
+                    desc_key="akaze_descriptors", pts3d_key="akaze_pts3d")
+
+                akaze_pnp = _pnp_solve_and_refine(akaze_agg_pts3d, akaze_agg_pts2d, K)
+
+                if akaze_pnp is not None and akaze_pnp[0] == "ok":
+                    _, n_matches, n_inliers, inlier_ratio, w2c = akaze_pnp
+                    s2a = frame["c2w"] @ w2c
+                    s2a_err = float(np.linalg.norm(s2a - np.eye(4)))
+                    R_s2a = s2a[:3, :3]
+                    rot_err = float(np.degrees(np.arccos(
+                        np.clip((np.trace(R_s2a) - 1) / 2, -1, 1))))
+                    results.append({
+                        "frame": frame["index"], "status": "ok",
+                        "method": "akaze_fallback",
+                        "n_matches": n_matches, "n_inliers": n_inliers,
+                        "inlier_ratio": inlier_ratio,
+                        "s2a_err": s2a_err, "rot_err": rot_err,
+                        "w2c_native": w2c, "c2w": frame["c2w"],
+                    })
                     continue
-                if q in used:
-                    continue
-                if t < len(kf["pts3d"]):
-                    agg_pts3d.append(kf["pts3d"][t])
-                    agg_pts2d_idx.append(q)
-                    used.add(q)
 
-        n_matches = len(agg_pts3d)
-        if n_matches < MIN_MATCHES_FOR_PNP:
-            results.append({"frame": frame["index"], "status": "few_matches", "n_matches": n_matches})
-            continue
-
-        pts3d = np.array(agg_pts3d, dtype=np.float32)
-        pts2d = np.array([kps[i].pt for i in agg_pts2d_idx], dtype=np.float32)
-
-        ok, rvec, tvec, inliers = cv2.solvePnPRansac(
-            pts3d, pts2d, K.astype(np.float32), None,
-            iterationsCount=PNP_ITERATIONS, reprojectionError=PNP_REPROJ_ERROR,
-            confidence=PNP_CONFIDENCE)
-
-        if not ok or inliers is None or len(inliers) < PNP_MIN_INLIERS:
-            n_inliers = 0 if inliers is None else len(inliers)
-            results.append({"frame": frame["index"], "status": "pnp_failed",
-                            "n_matches": n_matches, "n_inliers": n_inliers})
-            continue
-
-        n_inliers = len(inliers)
-        inlier_ratio = n_inliers / n_matches if n_matches > 0 else 0
-        if inlier_ratio < MIN_INLIER_RATIO:
-            results.append({"frame": frame["index"], "status": "pnp_rejected",
-                            "n_matches": n_matches, "n_inliers": n_inliers,
-                            "inlier_ratio": inlier_ratio})
-            continue
-
-        # PnP refinement: 用 RANSAC inlier 做 iterative PnP，以 RANSAC 结果为初始值
-        inlier_idx = inliers.flatten()
-        pts3d_inlier = pts3d[inlier_idx]
-        pts2d_inlier = pts2d[inlier_idx]
-        ok_ref, rvec_ref, tvec_ref = cv2.solvePnP(
-            pts3d_inlier, pts2d_inlier, K.astype(np.float32), None,
-            rvec=rvec.copy(), tvec=tvec.copy(), useExtrinsicGuess=True,
-            flags=cv2.SOLVEPNP_ITERATIVE)
-        if ok_ref:
-            rvec, tvec = rvec_ref, tvec_ref
-
-        R, _ = cv2.Rodrigues(rvec)
-        flip = np.diag([1.0, -1.0, -1.0])
-        w2c = np.eye(4)
-        w2c[:3, :3] = flip @ R
-        w2c[:3, 3] = (flip @ tvec).flatten()
-
-        s2a = frame["c2w"] @ w2c
-        s2a_err = float(np.linalg.norm(s2a - np.eye(4)))
-        R_s2a = s2a[:3, :3]
-        rot_err = float(np.degrees(np.arccos(np.clip((np.trace(R_s2a) - 1) / 2, -1, 1))))
-
-        results.append({
-            "frame": frame["index"], "status": "ok",
-            "n_matches": n_matches, "n_inliers": n_inliers,
-            "inlier_ratio": inlier_ratio,
-            "s2a_err": s2a_err, "rot_err": rot_err,
-            "w2c_native": w2c, "c2w": frame["c2w"],
-        })
+        # ORB 和 AKAZE 都失败，记录 ORB 的失败状态
+        fail_result = {"frame": frame["index"], "status": orb_status,
+                       "n_matches": orb_n_matches}
+        if orb_status == "pnp_failed":
+            fail_result["n_inliers"] = orb_n_inliers
+        elif orb_status == "pnp_rejected":
+            fail_result["n_inliers"] = orb_n_inliers
+            fail_result["inlier_ratio"] = orb_inlier_ratio
+        results.append(fail_result)
 
     return results
 
 
 def summarize(results, label):
-    """汇总并打印结果"""
+    """汇总并打印结果，分别统计 ORB/AKAZE/rescued 帧数"""
     total = len(results)
-    ok = [r for r in results if r["status"] == "ok"]
+    # 成功帧包括 ok 和 ok_rescued
+    ok = [r for r in results if r["status"] in ("ok", "ok_rescued")]
     n_ok = len(ok)
+    # 按定位方法分类统计
+    n_orb = len([r for r in results
+                 if r.get("method") == "orb" and r["status"] in ("ok", "ok_rescued")])
+    n_akaze = len([r for r in results
+                   if r.get("method") == "akaze_fallback" and r["status"] in ("ok", "ok_rescued")])
+    n_rescued = len([r for r in results if r["status"] == "ok_rescued"])
+    n_failed = total - n_ok
     rate = n_ok / total if total > 0 else 0
 
     mean_err = np.mean([r["s2a_err"] for r in ok]) if ok else float("nan")
@@ -349,15 +534,19 @@ def summarize(results, label):
         status_counts[s] = status_counts.get(s, 0) + 1
 
     aligned_info = f" | aligned_s2a={mean_err_aligned:.4f}" if has_aligned else ""
-    print(f"  {label}: {n_ok}/{total} ({rate:.1%}) | "
+    # 方法分类明细（orb/akaze/rescued/failed）
+    method_info = f" (orb={n_orb}, akaze={n_akaze}, rescued={n_rescued})"
+    print(f"  {label}: {n_ok}/{total} ({rate:.1%}){method_info} | "
           f"s2a_err={mean_err:.4f}{aligned_info} | rot={mean_rot:.1f}° | "
-          f"inlier_ratio={mean_ir:.1%} | {status_counts}")
+          f"inlier_ratio={mean_ir:.1%} | failed={n_failed} | {status_counts}")
 
     if has_aligned and mean_err_aligned >= 0.5:
         print(f"    ⚠️ 对齐后 s2a_err 均值 >= 0.5")
 
     summary = {
         "label": label, "total": total, "ok": n_ok, "rate": rate,
+        "n_orb": n_orb, "n_akaze": n_akaze,
+        "n_rescued": n_rescued, "n_failed": n_failed,
         "mean_s2a_err": float(mean_err) if ok else None,
         "mean_rot_err": float(mean_rot) if ok else None,
         "mean_inlier_ratio": float(mean_ir) if ok else None,
@@ -454,6 +643,9 @@ def main():
                     R_aligned = s2a_aligned[:3, :3]
                     r["rot_err_aligned"] = float(np.degrees(np.arccos(
                         np.clip((np.trace(R_aligned) - 1) / 2, -1, 1))))
+
+                # 离群帧救回：用 AT 反向验证 pnp_outlier 帧
+                AT, rescued_count = rescue_outlier_frames(results, AT)
 
             # 清理 numpy 对象（不序列化到 JSON）
             for r in results:

@@ -77,6 +77,26 @@ VL_API int vl_add_keyframe(VLHandle handle, int kf_id,
 }
 
 // ---------------------------------------------------------------------------
+// vl_add_keyframe_akaze — delegate to handle->addKeyframeAkaze
+// ---------------------------------------------------------------------------
+VL_API int vl_add_keyframe_akaze(VLHandle handle, int kf_id,
+                                  const unsigned char* descriptors,
+                                  int desc_count, int desc_len,
+                                  const float* points3d, const float* points2d) {
+    if (!handle) return 0;
+    if (!descriptors || !points3d || !points2d) return 0;
+    if (desc_count <= 0 || desc_len <= 0) return 0;
+    try {
+        auto* localizer = static_cast<VisualLocalizer*>(handle);
+        localizer->addKeyframeAkaze(kf_id, descriptors, desc_count, desc_len,
+                                    points3d, points2d);
+        return 1;
+    } catch (...) {
+        return 0;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // vl_build_index — delegate to handle->buildIndex
 // ---------------------------------------------------------------------------
 VL_API int vl_build_index(VLHandle handle) {
@@ -152,6 +172,19 @@ VL_API void vl_process_frame_out(VLHandle handle,
                                                has_last_pose != 0, last_pose_4x4);
     } catch (...) {
         *out_result = lost;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// vl_set_alignment_transform — set pre-computed 4×4 Alignment_Transform
+// ---------------------------------------------------------------------------
+VL_API void vl_set_alignment_transform(VLHandle handle, const float* at_4x4) {
+    if (!handle) return;
+    try {
+        auto* localizer = static_cast<VisualLocalizer*>(handle);
+        localizer->setAlignmentTransform(at_4x4);
+    } catch (...) {
+        // Swallow
     }
 }
 

@@ -5,7 +5,7 @@ using UnityEngine;
 namespace AreaTargetPlugin
 {
     [StructLayout(LayoutKind.Sequential)]
-    internal struct VLDebugInfo
+    public struct VLDebugInfo
     {
         public int orb_keypoints;
         public int candidate_keyframes;
@@ -14,6 +14,12 @@ namespace AreaTargetPlugin
         public int best_good_matches;
         public int best_inliers;
         public float best_bow_sim;
+        // --- 新增字段（与 C 头文件 VLDebugInfo 末尾追加字段对应）---
+        public float best_inlier_ratio;
+        public int akaze_triggered;
+        public int akaze_keypoints;
+        public int akaze_best_inliers;
+        public int consistency_rejected;
     }
 
     internal static class NativeLocalizerBridge
@@ -37,7 +43,17 @@ namespace AreaTargetPlugin
 
         [DllImport(LibName)] internal static extern int vl_build_index(IntPtr handle);
 
+        [DllImport(LibName)]
+        internal static extern int vl_add_keyframe_akaze(
+            IntPtr handle, int kf_id,
+            byte[] descriptors, int desc_count, int desc_len,
+            float[] points3d, float[] points2d);
+
         [DllImport(LibName)] internal static extern void vl_reset(IntPtr handle);
+
+        [DllImport(LibName)]
+        internal static extern void vl_set_alignment_transform(
+            IntPtr handle, float[] at_4x4);
 
         // --- Raw process_frame: returns flat buffer to avoid struct-return ABI issues ---
         // We P/Invoke the original vl_process_frame but marshal the return as IntPtr,
@@ -66,8 +82,8 @@ namespace AreaTargetPlugin
         [DllImport(LibName, EntryPoint = "vl_get_debug_info")]
         private static extern void vl_get_debug_info_native(IntPtr handle, IntPtr out_info);
 
-        // Size of VLDebugInfo: 6 ints (24) + 1 float (4) = 28 bytes
-        private const int VLDebugInfoSize = 28;
+        // Size of VLDebugInfo: 6 ints (24) + 1 float (4) + 1 float (4) + 4 ints (16) = 48 bytes
+        private const int VLDebugInfoSize = 48;
 
         private static bool _hasDebugInfo = false;
         private static bool _checkedDebugInfo = false;
@@ -117,6 +133,13 @@ namespace AreaTargetPlugin
                 info.best_inliers = Marshal.ReadInt32(ptr, 20);
                 info.best_bow_sim = BitConverter.ToSingle(
                     BitConverter.GetBytes(Marshal.ReadInt32(ptr, 24)), 0);
+                // 新增字段 (offset 28+)
+                info.best_inlier_ratio = BitConverter.ToSingle(
+                    BitConverter.GetBytes(Marshal.ReadInt32(ptr, 28)), 0);
+                info.akaze_triggered = Marshal.ReadInt32(ptr, 32);
+                info.akaze_keypoints = Marshal.ReadInt32(ptr, 36);
+                info.akaze_best_inliers = Marshal.ReadInt32(ptr, 40);
+                info.consistency_rejected = Marshal.ReadInt32(ptr, 44);
             }
             finally
             {

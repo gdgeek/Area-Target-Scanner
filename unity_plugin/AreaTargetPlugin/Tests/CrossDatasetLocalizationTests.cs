@@ -37,3 +37,5 @@ namespace AreaTargetPlugin.Tests
         private const float S2A_ERROR_THRESHOLD = 0.5f;     // scanToAR 误差阈值（跨数据集更宽松）
         private const float TRANSLATION_ERROR_M = 0.5f;     // 平移误差 (m)
         private const float ROTATION_ERROR_DEG = 10.0f;     // 旋转误差 (°)
+    }
+}

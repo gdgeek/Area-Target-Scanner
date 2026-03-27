@@ -39,6 +39,7 @@ public class SLAMTestSceneManager : MonoBehaviour
     private GameObject _glbModelObj;   // GLB 模型 GameObject (glTFast)
     private GltfImport _gltfImport;    // glTFast import handle
     private bool _glbLoaded;
+    private Material _wireMaterial;    // 线框材质引用，用于 TRACKING/LOST 颜色切换
     private bool _initialized;
 
     private float _fpsTimer;
@@ -379,12 +380,42 @@ public class SLAMTestSceneManager : MonoBehaviour
         }
 
         // 跟踪中：计算扫描坐标系原点在 AR 世界中的位置
-        // result.Pose = ARKit world-to-camera [R|t] (修复后的 flip*R, flip*t)
-        // 扫描原点 (0,0,0) → 相机坐标 = R*(0,0,0)+t = t
-        // arCameraPose (camera-to-world) 把相机坐标变换到 AR 世界
+        //
+        // 坐标系约定：
+        //   Native w2c: ARKit 右手系 (Y-up, Z-back) — scan world → ARKit camera
+        //   arCameraPose: Unity 左手系 (Y-up, Z-forward) — Unity camera → Unity world
+        //   GLB 顶点: 经 glTFast X 翻转后在 "X-flipped ARKit" 系中，
+        //             子节点 localScale.x=-1 翻回 ARKit 右手系
+        //
+        // 变换链路：
+        //   1. w2c_arkit 把 ARKit 世界坐标映射到 ARKit 相机坐标
+        //   2. flipZ 把 ARKit 相机坐标转到 Unity 相机坐标 (Z 翻转)
+        //   3. c2w_unity 把 Unity 相机坐标映射到 Unity 世界坐标
+        //
+        //   scanToAR_full = c2w_unity * flipZ * w2c_arkit
+        //
+        // 但 scanToAR_full 的 det = -1 (含反射)，不能直接用 .rotation 提取。
+        // 解决方案：把 Z 翻转放到 GLB 子节点的 localScale 中 (改为 x=-1, z=-1)，
+        // 让 scanToAR 保持纯旋转+平移 (det=+1)。
+        //
+        // 分解：scanToAR_full = scanToAR_rigid * flipXZ_local
+        //   其中 flipXZ_local = diag(-1, 1, -1) 在子节点 localScale 中处理
+        //   scanToAR_rigid = c2w_unity * flipZ * w2c_arkit * inv(flipXZ_local)
+        //
+        // 更简洁的推导：
+        //   GLB 子节点 localScale = (-1, 1, -1) 等价于 flipXZ
+        //   glTFast 已做 X 翻转，所以子节点顶点 = flipX * v_arkit
+        //   经 localScale(-1,1,-1) 后 = flipXZ * flipX * v_arkit = flipZ * v_arkit
+        //   即子节点输出的是 "Z-flipped ARKit" = Unity 左手系的扫描世界坐标
+        //
+        //   所以 _glbModelObj.transform 只需要设置：
+        //   scanToAR_unity = c2w_unity * flipZ * w2c_arkit * inv(flipZ)
+        //                  = c2w_unity * flipZ * w2c_arkit * flipZ
+        //   这是标准的坐标系转换，det = +1
+        //
         if (result.State == AreaTargetPlugin.TrackingState.TRACKING && _originCube != null)
         {
-            Matrix4x4 p = result.Pose;
+            Matrix4x4 p = result.Pose; // w2c in ARKit convention
 
             // 验证旋转矩阵行列式 (应该接近 1.0)
             float detR = p.m00 * (p.m11 * p.m22 - p.m12 * p.m21)
@@ -398,14 +429,28 @@ public class SLAMTestSceneManager : MonoBehaviour
             _poseDebugInfo = $"w2c t=({p.m03:F2},{p.m13:F2},{p.m23:F2}) det={detR:F3}\n" +
                              $"arCam=({arCameraPose.m03:F2},{arCameraPose.m13:F2},{arCameraPose.m23:F2})";
 
-            // 扫描原点在相机坐标系中的位置
-            Vector3 scanOriginInCam = new Vector3(p.m03, p.m13, p.m23);
+            // 把 w2c_arkit 转换到 Unity 约定: w2c_unity = flipZ * w2c_arkit * flipZ
+            // flipZ * M * flipZ 等价于: 翻转第2行和第2列 (但对角线 [2,2] 翻转两次不变)
+            Matrix4x4 w2cUnity = p;
+            // 翻转第 2 行 (row 2): m2c for c=0,1,3 取反, m22 不变
+            w2cUnity.m20 = -p.m20;
+            w2cUnity.m21 = -p.m21;
+            // w2cUnity.m22 = p.m22; // 翻转两次，不变
+            w2cUnity.m23 = -p.m23;
+            // 翻转第 2 列 (col 2): mr2 for r=0,1 取反, m22 已处理
+            w2cUnity.m02 = -p.m02;
+            w2cUnity.m12 = -p.m12;
 
-            // 变换到 AR 世界坐标
+            // scanToAR: Unity 左手系中的 scan-to-AR 变换 (det = +1)
+            // = c2w_unity * w2c_unity
+            // 其中 w2c_unity 把 "Unity 左手系扫描世界" 映射到 "Unity 相机"
+            Matrix4x4 scanToAR = arCameraPose * w2cUnity;
+
+            // 扫描原点在 Unity 相机坐标系中的位置
+            Vector3 scanOriginInCam = new Vector3(w2cUnity.m03, w2cUnity.m13, w2cUnity.m23);
+
+            // 变换到 Unity AR 世界坐标
             Vector3 scanOriginInAR = arCameraPose.MultiplyPoint3x4(scanOriginInCam);
-
-            // scanToAR: 把扫描坐标系的任意点变换到 AR 世界
-            Matrix4x4 scanToAR = arCameraPose * result.Pose;
 
             // 验证 scanToAR 的行列式
             float detScanToAR = scanToAR.m00 * (scanToAR.m11 * scanToAR.m22 - scanToAR.m12 * scanToAR.m21)
@@ -448,6 +493,10 @@ public class SLAMTestSceneManager : MonoBehaviour
                 _glbModelObj.transform.SetPositionAndRotation(pos, rot);
                 _glbModelObj.transform.localScale = scale;
                 _glbModelObj.SetActive(true);
+
+                // TRACKING 时线框绿色
+                if (_wireMaterial != null)
+                    _wireMaterial.color = new Color(0f, 1f, 0f, 0.8f);
 
                 // 诊断: 模型世界空间 bounds
                 var renderers = _glbModelObj.GetComponentsInChildren<Renderer>();
@@ -498,11 +547,13 @@ public class SLAMTestSceneManager : MonoBehaviour
             Debug.Log($"[STABILITY] {_stabilityInfo}");
         }
 
-        // 丢失：播放音效，标记变红（保留在最后已知位置）
+        // 丢失：播放音效，线框变红（保留在最后已知位置，靠 ARKit SLAM 锚定）
         if (toLost)
         {
             audioFeedback?.PlayTrackingLost();
             SetCubeColor(Color.red);
+            if (_wireMaterial != null)
+                _wireMaterial.color = new Color(1f, 0f, 0f, 0.8f);
         }
 
         _previousState = result.State;
@@ -556,15 +607,16 @@ public class SLAMTestSceneManager : MonoBehaviour
             // 实例化场景到容器下
             await _gltfImport.InstantiateMainSceneAsync(_glbModelObj.transform);
 
-            // === glTFast X 轴翻转修正 ===
-            // glTFast 自动做右手系→左手系转换（ConvertVector3FloatToFloatJob 中 x *= -1）
-            // 但我们的 GLB 顶点已经在 ARKit 世界坐标系中，不需要这个转换
-            // 验证数据：GLB 原始 X 范围 [-4.70, -0.46]，glTFast 翻转后变成 [0.46, 4.70]
-            // 用 localScale.x = -1 翻回来
+            // === glTFast 坐标系修正 ===
+            // glTFast 自动做右手系→左手系转换（x *= -1）
+            // 但我们需要完整的 ARKit→Unity 转换: flipXZ = diag(-1, 1, -1)
+            // glTFast 已做 flipX，我们再加 flipZ，合起来就是 flipXZ
+            // 这样子节点顶点 = flipXZ * v_arkit = v_unity_lhs
+            // scanToAR (det=+1) 就能正确变换这些 Unity 左手系坐标
             foreach (Transform child in _glbModelObj.transform)
             {
-                child.localScale = new Vector3(-1f, 1f, 1f);
-                Debug.Log($"[GLB_DIAG] X-flip applied to child='{child.name}'");
+                child.localScale = new Vector3(-1f, 1f, -1f);
+                Debug.Log($"[GLB_DIAG] XZ-flip applied to child='{child.name}'");
             }
 
             // 诊断: 输出 glTFast 创建的子节点层级
@@ -626,7 +678,8 @@ public class SLAMTestSceneManager : MonoBehaviour
             var wireShader = Shader.Find("Sprites/Default");
             if (wireShader == null) wireShader = Shader.Find("UI/Default");
             var wireMat = new Material(wireShader);
-            wireMat.color = new Color(1f, 0f, 0f, 1f); // 不透明红色
+            wireMat.color = new Color(0f, 1f, 0f, 0.8f); // 初始绿色（首次显示即 TRACKING）
+            _wireMaterial = wireMat;
 
             var renderers = _glbModelObj.GetComponentsInChildren<Renderer>();
             foreach (var r in renderers)

@@ -6,4 +6,5 @@
   <assembly fullname="Unity.XR.ARFoundation" preserve="all"/>
   <assembly fullname="Unity.XR.ARSubsystems" preserve="all"/>
   <assembly fullname="SQLite-net" preserve="all"/>
+  <assembly fullname="AreaTargetPlugin" preserve="all"/>
 </linker>

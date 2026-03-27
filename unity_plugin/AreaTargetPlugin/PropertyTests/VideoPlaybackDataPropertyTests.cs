@@ -138,42 +138,41 @@ namespace AreaTargetPlugin.Tests
                     .Label($"w={w} h={h}: lengthOk={lengthOk} allInRange={allInRange}");
             });
         }
-    }
-}
 
-    // Feature: video-playback-test-scene, Property 7: 跟踪状态到显示的映射
-    /// <summary>
-    /// For any TrackingState value, the color mapping used by the scene manager
-    /// should satisfy: TRACKING→green, LOST→red, INITIALIZING→yellow.
-    /// Validates: Requirements 5.1, 5.2
-    /// </summary>
-    [FsCheck.NUnit.Property(MaxTest = 100)]
-    public Property TrackingStateColorMapping_IsCorrect()
-    {
-        var stateGen = Gen.Elements(
-            AreaTargetPlugin.TrackingState.TRACKING,
-            AreaTargetPlugin.TrackingState.LOST,
-            AreaTargetPlugin.TrackingState.INITIALIZING
-        ).ToArbitrary();
-
-        return Prop.ForAll(stateGen, (AreaTargetPlugin.TrackingState state) =>
+        // Feature: video-playback-test-scene, Property 7: 跟踪状态到显示的映射
+        /// <summary>
+        /// For any TrackingState value, the color mapping used by the scene manager
+        /// should satisfy: TRACKING→green, LOST→red, INITIALIZING→yellow.
+        /// Validates: Requirements 5.1, 5.2
+        /// </summary>
+        [FsCheck.NUnit.Property(MaxTest = 100)]
+        public Property TrackingStateColorMapping_IsCorrect()
         {
-            // 与 VideoPlaybackTestSceneManager 中相同的颜色映射逻辑
-            Color color = state switch
+            var stateGen = Gen.Elements(
+                AreaTargetPlugin.TrackingState.TRACKING,
+                AreaTargetPlugin.TrackingState.LOST,
+                AreaTargetPlugin.TrackingState.INITIALIZING
+            ).ToArbitrary();
+
+            return Prop.ForAll(stateGen, (AreaTargetPlugin.TrackingState state) =>
             {
-                AreaTargetPlugin.TrackingState.TRACKING     => Color.green,
-                AreaTargetPlugin.TrackingState.LOST         => Color.red,
-                AreaTargetPlugin.TrackingState.INITIALIZING => Color.yellow,
-                _                                           => Color.white
-            };
+                // 与 VideoPlaybackTestSceneManager 中相同的颜色映射逻辑
+                Color color = state switch
+                {
+                    AreaTargetPlugin.TrackingState.TRACKING     => Color.green,
+                    AreaTargetPlugin.TrackingState.LOST         => Color.red,
+                    AreaTargetPlugin.TrackingState.INITIALIZING => Color.yellow,
+                    _                                           => Color.white
+                };
 
-            bool trackingOk = state != AreaTargetPlugin.TrackingState.TRACKING || color == Color.green;
-            bool lostOk     = state != AreaTargetPlugin.TrackingState.LOST     || color == Color.red;
-            bool initOk     = state != AreaTargetPlugin.TrackingState.INITIALIZING || color == Color.yellow;
+                bool trackingOk = state != AreaTargetPlugin.TrackingState.TRACKING || color == Color.green;
+                bool lostOk     = state != AreaTargetPlugin.TrackingState.LOST     || color == Color.red;
+                bool initOk     = state != AreaTargetPlugin.TrackingState.INITIALIZING || color == Color.yellow;
 
-            return (trackingOk && lostOk && initOk)
-                .ToProperty()
-                .Label($"state={state} color={color}");
-        });
+                return (trackingOk && lostOk && initOk)
+                    .ToProperty()
+                    .Label($"state={state} color={color}");
+            });
+        }
     }
 }

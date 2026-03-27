@@ -5,6 +5,7 @@
     "AreaTargetPlugin.Runtime",
     "AreaTargetTest",
     "Unity.XR.ARFoundation",
+    "Gilzoide.SqliteNet",
     "VideoPlaybackTestScene"
   ],
   "includePlatforms": [

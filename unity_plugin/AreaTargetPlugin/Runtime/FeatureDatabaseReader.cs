@@ -17,6 +17,11 @@ namespace AreaTargetPlugin
         public List<Vector2> Keypoints2D;
         public List<Vector3> Points3D;
         public List<byte[]> Descriptors; // Each is 32-byte ORB descriptor
+
+        // AKAZE 特征数据
+        public List<byte[]> AkazeDescriptors;  // 每个 61 字节
+        public List<Vector2> AkazeKeypoints2D;
+        public List<Vector3> AkazePoints3D;
     }
 
     /// <summary>
@@ -44,6 +49,11 @@ namespace AreaTargetPlugin
         public int KeyframeCount => _keyframes?.Count ?? 0;
 
         /// <summary>
+        /// AKAZE 特征数据是否可用。当 features.db 包含 akaze_features 表且有数据时为 true。
+        /// </summary>
+        public bool HasAkazeFeatures { get; private set; }
+
+        /// <summary>
         /// Loads the feature database from the given SQLite file path.
         /// </summary>
         public bool Load(string dbPath)
@@ -56,6 +66,7 @@ namespace AreaTargetPlugin
 
             _keyframes = new List<KeyframeRecord>();
             _vocabulary = new List<VocabularyWord>();
+            HasAkazeFeatures = false;
 
             try
             {
@@ -63,6 +74,7 @@ namespace AreaTargetPlugin
                 {
                     LoadKeyframes(conn);
                     LoadVocabulary(conn);
+                    LoadAkazeFeatures(conn);
                 }
                 return true;
             }
@@ -85,7 +97,10 @@ namespace AreaTargetPlugin
                     Id = row.id,
                     Keypoints2D = new List<Vector2>(),
                     Points3D = new List<Vector3>(),
-                    Descriptors = new List<byte[]>()
+                    Descriptors = new List<byte[]>(),
+                    AkazeDescriptors = new List<byte[]>(),
+                    AkazeKeypoints2D = new List<Vector2>(),
+                    AkazePoints3D = new List<Vector3>()
                 };
 
                 // Parse pose (stored as 16 doubles, 128 bytes)
@@ -139,6 +154,53 @@ namespace AreaTargetPlugin
                     IdfWeight = (float)row.idf_weight
                 });
             }
+        }
+
+        /// <summary>
+        /// 加载 AKAZE 特征数据。如果 akaze_features 表不存在则跳过，不产生错误。
+        /// </summary>
+        private void LoadAkazeFeatures(SQLiteConnection conn)
+        {
+            // 检查 akaze_features 表是否存在
+            var checkStmt = conn.CreateCommand(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='akaze_features'");
+            var tableExists = checkStmt.ExecuteDeferredQuery<TableNameRow>();
+            bool found = false;
+            foreach (var _ in tableExists)
+            {
+                found = true;
+                break;
+            }
+
+            if (!found)
+            {
+                HasAkazeFeatures = false;
+                return;
+            }
+
+            // 构建 keyframe id → KeyframeRecord 映射
+            var kfMap = new Dictionary<int, KeyframeRecord>();
+            foreach (var kf in _keyframes)
+            {
+                kfMap[kf.Id] = kf;
+            }
+
+            // 读取 AKAZE 特征数据
+            var stmt = conn.CreateCommand(
+                "SELECT keyframe_id, x, y, x3d, y3d, z3d, descriptor FROM akaze_features ORDER BY keyframe_id, id");
+            int totalLoaded = 0;
+            foreach (var row in stmt.ExecuteDeferredQuery<AkazeFeatureRow>())
+            {
+                if (kfMap.TryGetValue(row.keyframe_id, out var kf))
+                {
+                    kf.AkazeKeypoints2D.Add(new Vector2((float)row.x, (float)row.y));
+                    kf.AkazePoints3D.Add(new Vector3((float)row.x3d, (float)row.y3d, (float)row.z3d));
+                    kf.AkazeDescriptors.Add(row.descriptor);
+                    totalLoaded++;
+                }
+            }
+
+            HasAkazeFeatures = totalLoaded > 0;
         }
 
         /// <summary>
@@ -238,6 +300,22 @@ namespace AreaTargetPlugin
             public int word_id { get; set; }
             public byte[] descriptor { get; set; }
             public double idf_weight { get; set; }
+        }
+
+        private class AkazeFeatureRow
+        {
+            public int keyframe_id { get; set; }
+            public double x { get; set; }
+            public double y { get; set; }
+            public double x3d { get; set; }
+            public double y3d { get; set; }
+            public double z3d { get; set; }
+            public byte[] descriptor { get; set; }
+        }
+
+        private class TableNameRow
+        {
+            public string name { get; set; }
         }
     }
 }

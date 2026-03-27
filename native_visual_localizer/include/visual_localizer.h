@@ -36,6 +36,11 @@ typedef struct {
     int best_inliers;        /* PnP RANSAC inlier count */
     float best_bow_sim;      /* Best BoW similarity score */
     float best_inlier_ratio; /* Best inlier ratio (inliers/good_matches) */
+    /* --- 新增字段（末尾追加，保持 ABI 向后兼容）--- */
+    int akaze_triggered;     /* AKAZE fallback 是否触发 (0/1) */
+    int akaze_keypoints;     /* AKAZE 特征点数（未触发时为 0）*/
+    int akaze_best_inliers;  /* AKAZE 最佳 inlier 数（未触发时为 0）*/
+    int consistency_rejected; /* 当前帧是否被一致性过滤拒绝 (0/1) */
 } VLDebugInfo;
 
 /* Lifecycle */
@@ -50,6 +55,10 @@ VL_API int  vl_add_keyframe(VLHandle handle, int kf_id,
                              const float* pose_4x4,
                              const unsigned char* descriptors, int desc_count,
                              const float* points3d, const float* points2d);
+VL_API int  vl_add_keyframe_akaze(VLHandle handle, int kf_id,
+                                   const unsigned char* descriptors,
+                                   int desc_count, int desc_len,
+                                   const float* points3d, const float* points2d);
 VL_API int  vl_build_index(VLHandle handle);
 
 /* Frame processing */
@@ -69,6 +78,9 @@ VL_API void vl_process_frame_out(VLHandle handle,
 
 /* State management */
 VL_API void vl_reset(VLHandle handle);
+
+/* 坐标系对齐变换: 设置预计算的 4×4 row-major Alignment_Transform */
+VL_API void vl_set_alignment_transform(VLHandle handle, const float* at_4x4);
 
 /* Debug diagnostics — writes last frame's pipeline stats to out_info */
 VL_API void vl_get_debug_info(VLHandle handle, VLDebugInfo* out_info);
