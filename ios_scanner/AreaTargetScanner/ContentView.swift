@@ -9,6 +9,12 @@ struct ActivityView: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
+/// Identifiable wrapper for immutable share payloads.
+struct SharePayload: Identifiable {
+    let id = UUID()
+    let activityItems: [Any]
+}
+
 /// Identifiable wrapper for URL so we can use fullScreenCover(item:)
 struct IdentifiableURL: Identifiable {
     let id = UUID()
@@ -17,8 +23,7 @@ struct IdentifiableURL: Identifiable {
 
 struct ContentView: View {
     @StateObject private var viewModel = ScanViewModel()
-    @State private var showShareSheet = false
-    @State private var shareItems: [Any] = []
+    @State private var sharePayload: SharePayload? = nil
     @State private var previewItem: IdentifiableURL? = nil
 
     var body: some View {
@@ -49,8 +54,8 @@ struct ContentView: View {
             }
         }
         .onAppear { viewModel.checkCameraPermission() }
-        .sheet(isPresented: $showShareSheet) {
-            ActivityView(activityItems: shareItems)
+        .sheet(item: $sharePayload) { payload in
+            ActivityView(activityItems: payload.activityItems)
         }
         .fullScreenCover(item: $previewItem) { item in
             ModelPreviewView(fileURL: item.url)
@@ -167,8 +172,7 @@ struct ContentView: View {
                     Button(action: {
                         let urls = viewModel.shareURLs(for: exportPath)
                         if !urls.isEmpty {
-                            shareItems = urls
-                            showShareSheet = true
+                            sharePayload = SharePayload(activityItems: urls)
                         }
                     }) {
                         Label("分享", systemImage: "square.and.arrow.up")
