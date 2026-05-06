@@ -26,6 +26,16 @@ struct ContentView: View {
     @State private var sharePayload: SharePayload? = nil
     @State private var previewItem: IdentifiableURL? = nil
 
+    #if DEBUG
+    private var isDebugDiagnosticsEnabled: Bool {
+        let processInfo = ProcessInfo.processInfo
+        return processInfo.arguments.contains("-ModelPreviewDebug")
+            || processInfo.arguments.contains("-ScannerDebug")
+            || processInfo.environment["MODEL_PREVIEW_DEBUG"] == "1"
+            || processInfo.environment["SCANNER_DEBUG"] == "1"
+    }
+    #endif
+
     var body: some View {
         ZStack {
             // ★ 深蓝色渐变背景 — v6 (sampleBilinear Y-flip fix)
@@ -141,20 +151,23 @@ struct ContentView: View {
 
                 Text("处理完成").font(.title2.weight(.semibold)).foregroundStyle(.white)
 
-                // DEBUG info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("DEBUG 导出路径:").font(.caption.weight(.bold)).foregroundStyle(.yellow)
-                    Text(exportPath).font(.system(size: 10, design: .monospaced)).foregroundStyle(.white.opacity(0.8))
-                    Text("DEBUG 文件 (\(files.count)):").font(.caption.weight(.bold)).foregroundStyle(.yellow)
-                    ForEach(files, id: \.self) { file in
-                        Text("  • \(file)").font(.system(size: 10, design: .monospaced)).foregroundStyle(.white.opacity(0.8))
+                #if DEBUG
+                if isDebugDiagnosticsEnabled {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("DEBUG 导出路径:").font(.caption.weight(.bold)).foregroundStyle(.yellow)
+                        Text(exportPath).font(.system(size: 10, design: .monospaced)).foregroundStyle(.white.opacity(0.8))
+                        Text("DEBUG 文件 (\(files.count)):").font(.caption.weight(.bold)).foregroundStyle(.yellow)
+                        ForEach(files, id: \.self) { file in
+                            Text("  • \(file)").font(.system(size: 10, design: .monospaced)).foregroundStyle(.white.opacity(0.8))
+                        }
+                        Text("DEBUG 模型:").font(.caption.weight(.bold)).foregroundStyle(.yellow)
+                        Text(foundModel?.lastPathComponent ?? "nil")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(foundModel != nil ? .green : .red)
                     }
-                    Text("DEBUG 模型:").font(.caption.weight(.bold)).foregroundStyle(.yellow)
-                    Text(foundModel?.lastPathComponent ?? "nil")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(foundModel != nil ? .green : .red)
+                    .padding(.horizontal, 20)
                 }
-                .padding(.horizontal, 20)
+                #endif
 
                 VStack(spacing: 12) {
                     Button(action: {
