@@ -17,13 +17,20 @@ services:
     restart: unless-stopped
 
   model_optimizer:
-    image: 3dugc/3d-model-optimizer:latest
+    build:
+      context: ./model_optimizer
+      dockerfile: Dockerfile
+    platform: linux/amd64
     ports:
       - "3000:3000"
+    volumes:
+      - model_optimizer_temp:/app/temp
     environment:
       - NODE_ENV=production
+      - PORT=3000
     restart: unless-stopped
 
 volumes:
   pipeline_uploads:
   pipeline_outputs:
+  model_optimizer_temp:
