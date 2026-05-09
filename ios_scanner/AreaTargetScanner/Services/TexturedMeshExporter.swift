@@ -50,6 +50,7 @@ final class TexturedMeshExporter {
             Ka 0.2 0.2 0.2
             Kd 1.0 1.0 1.0
             Ks 0.0 0.0 0.0
+            Ns 1.0
             illum 1
             map_Kd texture.jpg
             

@@ -113,26 +113,30 @@ final class ScanViewModel: ObservableObject {
         state = .ready
     }
 
-    /// Find a previewable 3D model file in the export directory (USDZ > OBJ with texture > USDA > OBJ)
+    /// Find a previewable 3D model file in the export directory.
+    /// Prefer textured formats for preview: USDZ, then OBJ only when its MTL and texture are present.
     func modelURL(for exportPath: String) -> URL? {
         let fm = FileManager.default
-        // Prefer USDZ (textured)
+
         let usdzPath = (exportPath as NSString).appendingPathComponent("model.usdz")
         if fm.fileExists(atPath: usdzPath) {
             return URL(fileURLWithPath: usdzPath)
         }
-        // OBJ with texture.jpg means textured mesh exists
+
         let objPath = (exportPath as NSString).appendingPathComponent("model.obj")
-        let texPath = (exportPath as NSString).appendingPathComponent("texture.jpg")
-        if fm.fileExists(atPath: objPath) && fm.fileExists(atPath: texPath) {
+        let mtlPath = (exportPath as NSString).appendingPathComponent("model.mtl")
+        let texturePath = (exportPath as NSString).appendingPathComponent("texture.jpg")
+        if fm.fileExists(atPath: objPath),
+           fm.fileExists(atPath: mtlPath),
+           fm.fileExists(atPath: texturePath) {
             return URL(fileURLWithPath: objPath)
         }
-        // USDA fallback (untextured)
+
         let usdaPath = (exportPath as NSString).appendingPathComponent("model.usda")
         if fm.fileExists(atPath: usdaPath) {
             return URL(fileURLWithPath: usdaPath)
         }
-        // Plain OBJ fallback
+
         if fm.fileExists(atPath: objPath) {
             return URL(fileURLWithPath: objPath)
         }
